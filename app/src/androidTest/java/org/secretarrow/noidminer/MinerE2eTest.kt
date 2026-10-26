@@ -11,8 +11,10 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -21,14 +23,15 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.secretarrow.noidminer.data.MineMode
 import org.secretarrow.noidminer.data.MinerSettingsRepository
+import org.secretarrow.noidminer.di.ServiceLocator
 
 /**
  * End-to-end on the emulator — REAL mining, no demo, no simulated miner.
  *
  * The app runs in POOL mode against a tiny in-process Stratum (SV1) server
  * and must complete the actual protocol pipeline:
- * mining.subscribe → mining.authorize → mining.notify → hashing (software
- * engine on x86_64) → share found → mining.submit received by the server.
+ * mining.subscribe -> mining.authorize -> mining.notify -> hashing (software
+ * engine on x86_64) -> share found -> mining.submit received by the server.
  */
 @RunWith(AndroidJUnit4::class)
 class MinerE2eTest {
@@ -73,13 +76,32 @@ class MinerE2eTest {
         compose.onNodeWithText("Start mining").performClick()
 
         // The service must connect, receive the notify and submit a real
-        // share produced by the hashing engine.
-        val submitted = server.awaitSubmit(SHARE_TIMEOUT_MS)
-        assertTrue("no mining.submit received from the app", submitted)
-        val line = server.lastSubmit().orEmpty()
+        // share produced by the hashing engine. Poll with live health
+        // checks so a stalled run fails with actionable diagnostics.
+        val core = ServiceLocator.minerCore()
+        val startedAt = System.currentTimeMillis()
+        var submitted = false
+        while (System.currentTimeMillis() - startedAt < SHARE_TIMEOUT_MS) {
+            submitted = server.submitSeen()
+            if (submitted) break
+            val elapsed = System.currentTimeMillis() - startedAt
+            val st = core.state.value
+            if (elapsed > START_GRACE_MS) {
+                check(st.running) { "mining never started — state=$st" }
+                check(!st.paused) { "mining paused mid-run — state=$st" }
+            }
+            Thread.sleep(500)
+        }
+        val st = core.state.value
         assertTrue(
-            "submit must reference the notified job id — got: $line",
-            line.contains("job-e2e-1"),
+            "no mining.submit in ${SHARE_TIMEOUT_MS}ms — state=$st " +
+                "hashes=${st.hashesTried} connections=${server.connectionCount()} " +
+                "lines=${server.receivedLines().takeLast(6)}",
+            submitted,
+        )
+        assertTrue(
+            "submit must reference the notified job id — got: ${server.lastSubmit().orEmpty()}",
+            server.lastSubmit().orEmpty().contains("job-e2e-1"),
         )
 
         compose.waitForIdle()
@@ -90,6 +112,7 @@ class MinerE2eTest {
 
     companion object {
         private const val SHARE_TIMEOUT_MS = 120_000L
+        private const val START_GRACE_MS = 15_000L
     }
 }
 
@@ -102,6 +125,8 @@ private class LocalStratumServer {
     private val server = ServerSocket(0)
     private val lastSubmitRef = AtomicReference<String?>(null)
     private val submitLatch = CountDownLatch(1)
+    private val connections = AtomicInteger(0)
+    private val lines = ConcurrentLinkedQueue<String>()
 
     @Volatile
     private var stopped = false
@@ -125,12 +150,14 @@ private class LocalStratumServer {
     }
 
     private fun serve(socket: Socket) {
+        connections.incrementAndGet()
         try {
             socket.soTimeout = 30_000
             val reader = BufferedReader(InputStreamReader(socket.inputStream))
             val writer = PrintWriter(socket.outputStream, true)
             while (!stopped) {
                 val line = reader.readLine() ?: break
+                lines.add(line)
                 when {
                     line.contains("mining.subscribe") -> {
                         writer.println(SUBSCRIBE_RESULT)
@@ -156,7 +183,13 @@ private class LocalStratumServer {
     fun awaitSubmit(timeoutMs: Long): Boolean =
         submitLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
 
+    fun submitSeen(): Boolean = submitLatch.count == 0L
+
     fun lastSubmit(): String? = lastSubmitRef.get()
+
+    fun connectionCount(): Int = connections.get()
+
+    fun receivedLines(): List<String> = lines.toList()
 
     fun close() {
         stopped = true

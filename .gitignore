@@ -1,0 +1,17 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/native-pow/target
+# Native .so artifacts are produced by scripts/build-rust.sh in CI.
+/app/src/main/jniLibs
+/captures
+.externalNativeBuild
+.cxx
+*.jks
+*.keystore
+# Never commit local secrets or keystores.
+keystore/

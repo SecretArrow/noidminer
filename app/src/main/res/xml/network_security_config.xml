@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Stratum pools may be plain TCP on non-HTTP ports; TLS is used whenever
+         the pool URL says stratum+tls. Cleartext HTTP stays blocked. -->
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

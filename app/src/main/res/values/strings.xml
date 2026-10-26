@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NoidMiner</string>
+    <string name="notif_channel_mining">Mining</string>
+    <string name="notif_channel_mining_desc">Live mining status and controls</string>
+    <string name="notif_title">NoidMiner is mining</string>
+    <string name="notif_paused">Paused (guards active)</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_stop">Stop</string>
+    <string name="label_shares">shares %1$d ok / %2$d rej</string>
+    <string name="label_benchmark">Benchmark</string>
+</resources>

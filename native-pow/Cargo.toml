@@ -1,0 +1,24 @@
+[package]
+name = "noidminer_pow"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Parano1d (NOID) Poseidon2b PoW core for the NoidMiner Android app"
+repository = "https://github.com/SecretArrow/noidminer"
+
+[lib]
+name = "noid_pow"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Upstream reference implementation of the Parano1d PoW — pinned to a
+# known-good commit for reproducible builds.
+noid_poseidon2b = { git = "https://github.com/ignotusnemo/parano1d.git", rev = "52938433a30b185ab007afaa15166a632cf2e82e" }
+noid_core = { git = "https://github.com/ignotusnemo/parano1d.git", rev = "52938433a30b185ab007afaa15166a632cf2e82e" }
+hex = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

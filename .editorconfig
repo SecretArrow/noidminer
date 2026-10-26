@@ -1,0 +1,13 @@
+root = true
+
+[*.{kt,kts}]
+# Formatting/wrapping nits are handled by the Auto-fix workflow; these rules
+# are relaxed so code review focuses on correctness.
+ktlint_standard_import-ordering = disabled
+ktlint_standard_trailing-comma = disabled
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_max-line-length = disabled
+ktlint_standard_argument-list-wrapping = disabled
+ktlint_standard_parameter-list-wrapping = disabled
+ktlint_standard_function-signature = disabled
+ktlint_standard_multiline-expression-wrapping = disabled

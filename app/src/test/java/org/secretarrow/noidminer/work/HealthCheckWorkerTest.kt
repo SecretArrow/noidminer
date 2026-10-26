@@ -1,8 +1,11 @@
 package org.secretarrow.noidminer.work
 
 import android.content.Context
+import android.util.Log
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
 import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -31,6 +34,12 @@ class HealthCheckWorkerTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        // WorkManager must be initialized for TestListenableWorkerBuilder.
+        val config = Configuration
+            .Builder()
+            .setMinimumLoggingLevel(Log.DEBUG)
+            .build()
+        WorkManagerTestInitHelper.initializeTestWorkManager(context, config)
         ServiceLocator.resetForTest()
         ServiceLocator.init(context)
     }

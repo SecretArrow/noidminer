@@ -69,10 +69,7 @@ struct SharedTls {
 impl SharedTls {
     fn send_line(&self, line: &str) -> anyhow::Result<()> {
         let mut guard = self.stream.lock().unwrap();
-        guard
-            .get_mut()
-            .sock
-            .set_write_timeout(Some(Duration::from_secs(10)))?;
+        guard.sock.set_write_timeout(Some(Duration::from_secs(10)))?;
         guard.write_all(line.as_bytes())?;
         guard.write_all(b"\n")?;
         guard.flush()?;
@@ -85,10 +82,7 @@ impl SharedTls {
     /// the caller's maintenance window. Ok(true) on a full line.
     fn read_line(&self, buf: &mut String) -> anyhow::Result<bool> {
         let mut guard = self.stream.lock().unwrap();
-        guard
-            .get_mut()
-            .sock
-            .set_read_timeout(Some(Duration::from_secs(20)))?;
+        guard.sock.set_read_timeout(Some(Duration::from_secs(20)))?;
         let mut out: Vec<u8> = Vec::with_capacity(1024);
         let mut byte = [0u8; 1];
         loop {

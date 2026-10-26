@@ -25,7 +25,7 @@ abstract class SettingsBackedViewModel : ViewModel() {
     private var repo: MinerSettingsRepository? = null
     private var collecting = false
 
-    protected val _settings = MutableStateFlow(MinerSettings())
+    private val _settings = MutableStateFlow(MinerSettings())
     val settings: StateFlow<MinerSettings> = _settings.asStateFlow()
 
     /** Idempotent attach — safe to call from every composition. */

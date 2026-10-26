@@ -14,6 +14,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.secretarrow.noidminer.data.PoolJobSource
+import org.secretarrow.noidminer.data.buildPoolUser
+import org.secretarrow.noidminer.data.stratum.StratumCodec
 
 /**
  * Full POOL-mode flow test on the JVM against a local fake

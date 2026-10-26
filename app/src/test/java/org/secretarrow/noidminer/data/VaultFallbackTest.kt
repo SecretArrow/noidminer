@@ -55,7 +55,7 @@ class VaultFallbackTest {
     }
 
     @Test
-    fun `vault get/set never throws on the fallback store`() {
+    fun `vault get and set never throw on the fallback store`() {
         // On Robolectric the encrypted store may work or fall back — either
         // way every access must complete without throwing.
         val vault = ServiceLocator.vault(context)

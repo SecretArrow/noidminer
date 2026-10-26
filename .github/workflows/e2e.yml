@@ -61,7 +61,9 @@ jobs:
           avd-name: e2e-avd
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest
+          # x86_64 ABI so the APK is installable on the emulator; the app
+          # then exercises its pure-Kotlin software engine fallback path.
+          script: ./gradlew :app:connectedDebugAndroidTest -Pnoid.abis=x86_64
       - name: Upload e2e reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -150,6 +150,12 @@ class MinerCore(
         rejected.set(0)
         paused.set(false)
         currentJob = null
+        // CRITICAL: set the AtomicBoolean BEFORE the worker threads start.
+        // workerLoop checks `while (running.get())` — if this is false, the
+        // workers exit immediately and no shares are ever found. The previous
+        // code only updated the StateFlow's `running` field, leaving the
+        // AtomicBoolean false — every lifecycle test timed out.
+        running.set(true)
         _state.value = MinerState(
             running = true,
             backend = selection.engine.name,

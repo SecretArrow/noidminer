@@ -6,7 +6,7 @@
 # Default: bangun SEMUA ABI yang didukung (arm64-v8a, armeabi-v7a, x86_64, x86)
 # supaya release split-per-ABI otomatis. Override:
 #   ./scripts/build-rust.sh aarch64-linux-android            # arm64 saja
-#   ./scripts/build-rust.sh "aarch64-linux-android armv7a-linux-androideabi"
+#   ./scripts/build-rust.sh "aarch64-linux-android armv7-linux-androideabi"
 #   ./scripts/build-rust.sh x86_64-linux-android             # untuk emulator
 set -euo pipefail
 
@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC2206
 DEFAULT_TARGETS=(
     aarch64-linux-android
-    armv7a-linux-androideabi
+    armv7-linux-androideabi
     x86_64-linux-android
     i686-linux-android
 )
@@ -65,7 +65,7 @@ ARGS=()
 for t in "${TARGETS[@]}"; do
     case "$t" in
         aarch64-linux-android)      ARGS+=(-t arm64-v8a) ;;
-        armv7a-linux-androideabi)   ARGS+=(-t armeabi-v7a) ;;
+        armv7-linux-androideabi)   ARGS+=(-t armeabi-v7a) ;;
         x86_64-linux-android)       ARGS+=(-t x86_64) ;;
         i686-linux-android)         ARGS+=(-t x86) ;;
         *)

@@ -31,7 +31,7 @@ jobs:
             rust_target: aarch64-linux-android
             artifact_suffix: arm64
           - abi: armeabi-v7a
-            rust_target: armv7a-linux-androideabi
+            rust_target: armv7-linux-androideabi
             artifact_suffix: arm32
           - abi: x86_64
             rust_target: x86_64-linux-android

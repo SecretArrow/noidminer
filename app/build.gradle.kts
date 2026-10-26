@@ -20,17 +20,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
-        ndk {
-            // Default: bangun semua ABI yang didukung (arm64-v8a, armeabi-v7a,
-            // x86_64, x86) supaya release split-per-ABI otomatis. E2E workflow
-            // override ke x86_64 saja via property:
-            //   ./gradlew ... -Pnoid.abis=x86_64
-            val abis = providers.gradleProperty("noid.abis").orNull
-                ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
-                ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-            abiFilters += abis
-        }
-
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17", "-O2", "-fvisibility=hidden", "-fexceptions")
@@ -121,11 +110,16 @@ android {
             isEnable = true
             isUniversalApk = false
             reset()
-            // arm64-v8a  = hampir semua HP modern (2016+)
-            // armeabi-v7a = HP lawas 32-bit (fallback PMULL tidak ada, software path)
-            // x86_64      = emulator & tablet Intel/AMD
-            // x86         = emulator lawas (jarang dipakai, tapi kecil biaya)
-            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            // Default: bangun semua 4 ABI (arm64-v8a, armeabi-v7a, x86_64, x86).
+            // Override via property untuk build single-ABI:
+            //   ./gradlew :app:assembleRelease -Pnoid.abis=arm64-v8a   (release matrix per-ABI)
+            //   ./gradlew :app:assembleDebug    -Pnoid.abis=x86_64     (E2E emulator)
+            // Catatan: jangan set ndk.abiFilters di defaultConfig — AGP akan
+            // keluhkan konflik "abiFilters vs splits abi filters" (lihat issue v1.2.0).
+            val abis = providers.gradleProperty("noid.abis").orNull
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            include(*abis.toTypedArray())
             isEnable = true
         }
     }

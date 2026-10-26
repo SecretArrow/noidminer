@@ -38,6 +38,7 @@ val TextSecondary = Color(0xFF8B95B0)
 val TextTertiary = Color(0xFF5E6A85)
 
 // --- Gradients ---
+
 /** Hero gradient — violet → cyan, signature look across the app. */
 val GradientHero = listOf(AuroraViolet, AuroraCyan)
 

@@ -74,7 +74,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal 2>/dev/null || true
           rustup default stable
-          rustup target add aarch64-linux-android armv7a-linux-androideabi x86_64-linux-android i686-linux-android
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
       - name: Cache Rust (per-OS, keyed on Cargo.lock)
         uses: actions/cache@v4
         with:

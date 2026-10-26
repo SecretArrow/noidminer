@@ -76,6 +76,10 @@ object StratumCodec {
     /**
      * Extracts the body of `"key": { ... }` (object form) with brace-depth
      * awareness — used by parano1d-stratum-v1 notify/pause/resume params.
+     *
+     * Also handles the array-wrapped form `"key": [ { ... } ]` (a single-element
+     * array containing an object) — that's what real InnovLab/RPlant pools send
+     * for `mining.notify` / `mining.pause` / `mining.resume` params.
      */
     internal fun extractObject(line: String, key: String): String? {
         val token = "\"$key\""
@@ -85,26 +89,56 @@ object StratumCodec {
             val colon = Regex("^\\s*:\\s*").find(rest)
             if (colon != null) {
                 val after = rest.substring(colon.value.length)
-                if (after.startsWith("{")) {
-                    var depth = 0
-                    var inString = false
-                    var escape = false
-                    for (i in after.indices) {
-                        val ch = after[i]
-                        when {
-                            escape -> escape = false
-                            ch == '\\' && inString -> escape = true
-                            ch == '"' -> inString = !inString
-                            inString -> Unit
-                            ch == '{' -> depth++
-                            ch == '}' -> {
-                                depth--
-                                if (depth == 0) return after.substring(1, i)
-                            }
+                // Find the first non-whitespace char — it could be '{' (object)
+                // or '[' (array, possibly wrapping a single object).
+                val firstCharIdx = after.indexOfFirst { !it.isWhitespace() }
+                if (firstCharIdx < 0) {
+                    idx = line.indexOf(token, idx + 1)
+                    continue
+                }
+                val firstChar = after[firstCharIdx]
+                val bodyStart: Int
+                val bodySlice: String
+                when (firstChar) {
+                    '{' -> {
+                        bodyStart = firstCharIdx
+                        bodySlice = after.substring(bodyStart)
+                    }
+                    '[' -> {
+                        // Array form — extract the first object inside it.
+                        // Find the first '{' after the '['.
+                        val objIdx = after.indexOf('{', firstCharIdx + 1)
+                        if (objIdx < 0) {
+                            idx = line.indexOf(token, idx + 1)
+                            continue
+                        }
+                        bodyStart = objIdx
+                        bodySlice = after.substring(bodyStart)
+                    }
+                    else -> {
+                        idx = line.indexOf(token, idx + 1)
+                        continue
+                    }
+                }
+                // Now scan bodySlice for the matching closing brace.
+                var depth = 0
+                var inString = false
+                var escape = false
+                for (i in bodySlice.indices) {
+                    val ch = bodySlice[i]
+                    when {
+                        escape -> escape = false
+                        ch == '\\' && inString -> escape = true
+                        ch == '"' -> inString = !inString
+                        inString -> Unit
+                        ch == '{' -> depth++
+                        ch == '}' -> {
+                            depth--
+                            if (depth == 0) return bodySlice.substring(1, i)
                         }
                     }
-                    return null
                 }
+                return null
             }
             idx = line.indexOf(token, idx + 1)
         }
@@ -203,9 +237,12 @@ object StratumCodec {
             val params = paramsBody?.let { splitArrayItems(it) } ?: emptyList()
             return methodEvent(method, params)
         }
-        val error = extractArray(line, "error")
+        val error = extractArray(line, "error") ?: extractObject(line, "error")
         if (error != null && error.isNotBlank() && error != "null") {
-            return Event.Error(error.take(200))
+            // If the error is an object, prefer its "message" field; otherwise
+            // surface the raw body (array form, raw string, etc).
+            val message = objString(error, "message") ?: error
+            return Event.Error(message.take(200))
         }
         val resultBool = RESULT_BOOL_RE.find(line)
         if (resultBool != null) {

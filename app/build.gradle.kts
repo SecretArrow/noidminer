@@ -14,19 +14,20 @@ android {
         applicationId = "org.secretarrow.noidminer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
         ndk {
-            // arm64-v8a covers virtually all modern Android hardware. The
-            // E2E workflow overrides this to x86_64 for the emulator:
+            // Default: bangun semua ABI yang didukung (arm64-v8a, armeabi-v7a,
+            // x86_64, x86) supaya release split-per-ABI otomatis. E2E workflow
+            // override ke x86_64 saja via property:
             //   ./gradlew ... -Pnoid.abis=x86_64
             val abis = providers.gradleProperty("noid.abis").orNull
                 ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
-                ?: listOf("arm64-v8a")
+                ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
             abiFilters += abis
         }
 
@@ -115,6 +116,20 @@ android {
         }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            isUniversalApk = false
+            reset()
+            // arm64-v8a  = hampir semua HP modern (2016+)
+            // armeabi-v7a = HP lawas 32-bit (fallback PMULL tidak ada, software path)
+            // x86_64      = emulator & tablet Intel/AMD
+            // x86         = emulator lawas (jarang dipakai, tapi kecil biaya)
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isEnable = true
+        }
+    }
+
     packaging {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
@@ -122,10 +137,16 @@ android {
             "/META-INF/LICENSE*",
             "/META-INF/NOTICE*",
         )
+        // 16 KB page-size alignment for Android 15+ — dijamin sama untuk Rust
+        // (linker flag) dan CMake (cppFlags).
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -138,6 +159,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(platform(libs.compose.bom))
@@ -150,6 +172,11 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.work.testing)
+    testImplementation(libs.mockk)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))

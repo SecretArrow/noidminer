@@ -61,21 +61,21 @@ jobs:
           retention-days: 7
 
   build:
-    name: Native + APK (debug artifact)
+    name: Native + APK (debug, all 4 ABIs)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      - name: Rust toolchain (preinstalled rustup + android target)
+      - name: Rust toolchain (all 4 Android targets)
         run: |
           rustup toolchain install stable --profile minimal 2>/dev/null || true
           rustup default stable
-          rustup target add aarch64-linux-android
-      - name: Cache Rust (registry + git + target + toolchain)
+          rustup target add aarch64-linux-android armv7a-linux-androideabi x86_64-linux-android i686-linux-android
+      - name: Cache Rust (per-OS, keyed on Cargo.lock)
         uses: actions/cache@v4
         with:
           path: |
@@ -84,7 +84,7 @@ jobs:
             ~/.cargo/bin
             ~/.rustup
             native-pow/target
-          key: rust-${{ runner.os }}-${{ hashFiles('native-pow/Cargo.toml') }}
+          key: rust-${{ runner.os }}-all-abis-${{ hashFiles('native-pow/Cargo.toml') }}
           restore-keys: rust-${{ runner.os }}-
       - name: Ensure NDK 26.3
         run: |
@@ -92,16 +92,18 @@ jobs:
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264" > /dev/null
           fi
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
-      - name: Build Rust core (arm64-v8a)
+      - name: Build Rust core (all 4 ABIs)
         run: |
           chmod +x scripts/build-rust.sh
-          ./scripts/build-rust.sh aarch64-linux-android
+          # Pass empty arg → script builds all 4 default targets in one cargo-ndk
+          # invocation (parallel, shared job cache — faster than 4 separate runs).
+          ./scripts/build-rust.sh
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-      - name: Assemble debug APK + Android lint
+      - name: Assemble debug APK (split per ABI) + Android lint
         run: ./gradlew :app:assembleDebug :app:lintDebug
-      - name: Upload APK artifact
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: noidminer-debug-apk

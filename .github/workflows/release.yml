@@ -13,22 +13,44 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Signed release APK → GitHub Release
+  # ---------------------------------------------------------------------------
+  # Build matrix — 4 ABIs in parallel. Each job builds Rust for one target,
+  # assembles a per-ABI APK, signs it, verifies the signature (hard gate),
+  # and uploads as a workflow artifact. The `publish` job below downloads
+  # all 4 and creates the GitHub Release.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build APK (${{ matrix.abi }})
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust_target: aarch64-linux-android
+            artifact_suffix: arm64
+          - abi: armeabi-v7a
+            rust_target: armv7a-linux-androideabi
+            artifact_suffix: arm32
+          - abi: x86_64
+            rust_target: x86_64-linux-android
+            artifact_suffix: x86_64
+          - abi: x86
+            rust_target: i686-linux-android
+            artifact_suffix: x86
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      - name: Rust toolchain (preinstalled rustup + android target)
+      - name: Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal 2>/dev/null || true
           rustup default stable
-          rustup target add aarch64-linux-android
-      - name: Cache Rust
+          rustup target add ${{ matrix.rust_target }}
+      - name: Cache Rust (per-target)
         uses: actions/cache@v4
         with:
           path: |
@@ -37,18 +59,18 @@ jobs:
             ~/.cargo/bin
             ~/.rustup
             native-pow/target
-          key: rust-${{ runner.os }}-${{ hashFiles('native-pow/Cargo.toml') }}
-          restore-keys: rust-${{ runner.os }}-
+          key: rust-${{ runner.os }}-${{ matrix.rust_target }}-${{ hashFiles('native-pow/Cargo.toml') }}
+          restore-keys: rust-${{ runner.os }}-${{ matrix.rust_target }}-
       - name: Ensure NDK 26.3
         run: |
           if [ ! -d "$ANDROID_HOME/ndk/26.3.11579264" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264" > /dev/null
           fi
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
-      - name: Build Rust core (arm64-v8a)
+      - name: Build Rust core (${{ matrix.rust_target }})
         run: |
           chmod +x scripts/build-rust.sh
-          ./scripts/build-rust.sh aarch64-linux-android
+          ./scripts/build-rust.sh ${{ matrix.rust_target }}
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
@@ -63,16 +85,14 @@ jobs:
             echo "NOID_KEYSTORE_FILE=" >> "$GITHUB_ENV"
             echo "::warning::No signing secret set — APK would be UNSIGNED; the hard gate below will fail the job."
           fi
-      - name: Assemble release
+      - name: Assemble release (single-ABI)
         env:
-          # Both delivery paths are wired: the decoded file (NOID_KEYSTORE_FILE)
-          # and the raw base64 (NOID_KEYSTORE_BASE64) — Gradle accepts either.
           NOID_KEYSTORE_FILE: ${{ env.NOID_KEYSTORE_FILE }}
           NOID_KEYSTORE_BASE64: ${{ secrets.NOID_KEYSTORE_BASE64 }}
           NOID_KEYSTORE_PASSWORD: ${{ secrets.NOID_KEYSTORE_PASSWORD }}
           NOID_KEY_ALIAS: ${{ secrets.NOID_KEY_ALIAS }}
           NOID_KEY_PASSWORD: ${{ secrets.NOID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease
+        run: ./gradlew :app:assembleRelease -Pnoid.abis=${{ matrix.abi }}
       - name: Verify APK is signed (hard gate)
         run: |
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
@@ -82,35 +102,68 @@ jobs:
           fi
           echo "APK signature OK:"
           keytool -printcert -jarfile "$APK" | head -6
-      - name: Checksums
-        run: |
-          cd app/build/outputs/apk/release
-          sha256sum *.apk > SHA256SUMS.txt
-          cat SHA256SUMS.txt
       - name: Rename artifact
         run: |
           VERSION="${GITHUB_REF_NAME:-nightly}"
           mkdir -p dist
-          cp app/build/outputs/apk/release/*.apk "dist/NoidMiner-${VERSION}-arm64.apk"
-          cp app/build/outputs/apk/release/SHA256SUMS.txt dist/ 2>/dev/null || true
+          cp app/build/outputs/apk/release/*.apk "dist/NoidMiner-${VERSION}-${{ matrix.artifact_suffix }}.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noidminer-apk-${{ matrix.artifact_suffix }}
+          path: dist/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Publish — downloads all 4 per-ABI artifacts, merges SHA256SUMS, creates
+  # the GitHub Release. Runs only on tag push.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all per-ABI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: noidminer-apk-*
+          merge-multiple: true
+          path: dist
+      - name: Merge SHA256SUMS
+        run: |
+          cd dist
+          rm -f SHA256SUMS.txt
+          sha256sum *.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "NoidMiner $GITHUB_REF_NAME" \
-            --notes "Parano1d (NOID) Poseidon2b miner untuk Android — arm64-v8a.
+            --notes "Parano1d (NOID) Poseidon2b miner untuk Android — split per-ABI.
 
+          ## APK per-ABI
+          - **arm64-v8a**  — hampir semua HP modern (2016+)
+          - **armeabi-v7a** — HP lawas 32-bit (software PoW path)
+          - **x86_64**     — emulator & tablet Intel/AMD
+          - **x86**        — emulator lawas (jarang dipakai)
+
+          Pilih APK sesuai ABI perangkat. Saat ragu, pakai **arm64**.
+
+          ## Apa yang baru
+          - Total UI/UX redesign — Aurora Midnight theme, glass cards, radial gauge
+          - WorkManager cronjobs (health-check, hashrate logger, guard re-eval)
+          - Split APK per-ABI (4 ABIs, paralel di CI)
+          - Background mining + foreground service (Pause/Resume/Stop)
           - CPU native (ARM PMULL) + GPU OpenCL (self-check otomatis)
-          - Background mining (foreground service + guards)
           - Mode: Pool (Stratum SV1 TCP/TLS) / Solo node (JSON-RPC)
           - Signed APK — v1+v2+v3, 16 KB page-size ready (Android 15+)
+
           Lihat README untuk cara instal & troubleshooting." || \
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-      - name: Upload APK artifact (always)
-        uses: actions/upload-artifact@v4
-        with:
-          name: noidminer-release-apk
-          path: dist/
-          retention-days: 30

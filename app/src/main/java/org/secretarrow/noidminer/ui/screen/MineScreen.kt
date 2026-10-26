@@ -16,8 +16,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,21 +31,38 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.secretarrow.noidminer.ui.components.GlassCard
+import org.secretarrow.noidminer.ui.components.GradientButton
 import org.secretarrow.noidminer.ui.components.HashrateChart
+import org.secretarrow.noidminer.ui.components.LiveIndicator
+import org.secretarrow.noidminer.ui.components.PillTone
+import org.secretarrow.noidminer.ui.components.RadialGauge
 import org.secretarrow.noidminer.ui.components.StatCard
-import org.secretarrow.noidminer.ui.theme.GradientStops
+import org.secretarrow.noidminer.ui.components.StatusPill
+import org.secretarrow.noidminer.ui.theme.GradientDanger
+import org.secretarrow.noidminer.ui.theme.GradientHero
+import org.secretarrow.noidminer.ui.theme.GradientIdle
+import org.secretarrow.noidminer.ui.theme.GradientMining
 import org.secretarrow.noidminer.util.Format
 import org.secretarrow.noidminer.viewmodel.MineViewModel
 
 /**
- * Mine — the hero screen: animated hashrate, sparkline, share counters,
- * backend/pool chips, and the big start/pause/stop control.
+ * Mine v2 — the hero screen.
+ *
+ * Layout (top → bottom):
+ *  1. Status strip — LiveIndicator (pulsing dot) + backend / GPU / thermal pills
+ *  2. Hero glass card — RadialGauge center + big hashrate number + sparkline strip
+ *  3. Three stat cards — Accepted / Rejected / Uptime (compact glass tiles)
+ *  4. Primary CTA — GradientButton (Start / Pause / Resume)
+ *  5. Stop button — subtle text below CTA (only visible when running)
+ *
+ * Hero number uses displayMedium (44sp Black). Gauge max is 2x the current
+ * hashrate so the arc never saturates at idle and always shows movement.
  */
 @Composable
 fun MineScreen(
@@ -56,23 +76,18 @@ fun MineScreen(
     val state by viewModel.state.collectAsState()
     val thermal by viewModel.thermal.collectAsState()
 
-    val (icon, label, action, contentColor) = when {
-        !state.running -> Quad(Icons.Filled.PlayArrow, "Start mining", onStart, Color.White)
-        state.paused -> Quad(Icons.Filled.PlayArrow, "Resume", onResume, Color.White)
-        else -> Quad(Icons.Filled.Pause, "Pause", onPause, MaterialTheme.colorScheme.onSurface)
+    val isRunning = state.running
+    val isPaused = state.paused
+
+    // CTA configuration — flips between three states with distinct gradients.
+    val (ctaLabel, ctaIcon, ctaAction, ctaGradient) = when {
+        !isRunning -> Cta("Start mining", Icons.Filled.PlayArrow, onStart, GradientHero)
+        isPaused -> Cta("Resume", Icons.Filled.PlayArrow, onResume, GradientMining)
+        else -> Cta("Pause", Icons.Filled.Pause, onPause, GradientIdle)
     }
-    val heroBrush = when {
-        !state.running -> Brush.horizontalGradient(GradientStops)
-        state.paused -> Brush.horizontalGradient(
-            listOf(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.secondary),
-        )
-        else -> Brush.horizontalGradient(
-            listOf(
-                MaterialTheme.colorScheme.surfaceVariant,
-                MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        )
-    }
+
+    // Gauge max — adaptive so the arc shows movement but never saturates.
+    val gaugeMax = (state.hashrateHps * 2.0).coerceAtLeast(50.0).toFloat()
 
     Column(
         modifier = modifier
@@ -83,44 +98,95 @@ fun MineScreen(
     ) {
         Spacer(Modifier.height(8.dp))
 
-        // ------------------------------------------------------ hero card
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            MaterialTheme.colorScheme.surface,
-                        ),
-                    ),
-                ),
+        // ---------------------------------------------------- status strip
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            HashrateChart(
-                value = state.hashrateHps,
-                modifier = Modifier.fillMaxSize().padding(top = 24.dp),
-            )
-            Column(modifier = Modifier.align(Alignment.TopStart).padding(20.dp)) {
-                Text(
-                    text = "LIVE HASHRATE",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            LiveIndicator(active = isRunning && !isPaused, label = if (isRunning) "LIVE" else "IDLE")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusPill(
+                    label = state.backend.ifBlank { "—" },
+                    tone = PillTone.Info,
+                    icon = Icons.Filled.Memory,
                 )
-                Text(
-                    text = Format.hashrate(state.hashrateHps),
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Black,
+                StatusPill(
+                    label = if (state.gpuAvailable) "GPU" else "CPU",
+                    tone = if (state.gpuAvailable) PillTone.Success else PillTone.Neutral,
                 )
-                Text(
-                    text = when {
-                        !state.running -> "idle"
-                        state.paused -> "paused · ${state.pausedReason ?: ""}"
-                        else -> "${state.backend} · h=${state.currentHeight}"
+                StatusPill(
+                    label = thermal,
+                    tone = when {
+                        thermal in listOf("severe", "critical", "emergency", "shutdown") -> PillTone.Error
+                        thermal in listOf("moderate", "light") -> PillTone.Warning
+                        else -> PillTone.Success
                     },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    icon = Icons.Filled.Thermostat,
+                )
+            }
+        }
+
+        // ---------------------------------------------------- hero glass card
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 32.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 20.dp,
+                vertical = 24.dp,
+            ),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                RadialGauge(
+                    value = state.hashrateHps.toFloat(),
+                    maxValue = gaugeMax,
+                    size = 220.dp,
+                    strokeWidth = 14.dp,
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "HASHRATE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = Format.hashrate(state.hashrateHps),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = when {
+                            !isRunning -> "tap start to begin"
+                            isPaused -> "paused · ${state.pausedReason ?: ""}"
+                            else -> "h=${state.currentHeight} · ${state.backend}"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // Sparkline strip — last 60 samples, gradient fill.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            ) {
+                HashrateChart(
+                    value = state.hashrateHps,
+                    modifier = Modifier.fillMaxSize().padding(6.dp),
                 )
             }
         }
@@ -141,86 +207,56 @@ fun MineScreen(
             )
             StatCard(
                 label = "Uptime",
-                value = if (state.running) Format.duration(System.currentTimeMillis() - state.startedAtMs) else "—",
+                value = if (isRunning) Format.duration(System.currentTimeMillis() - state.startedAtMs) else "—",
                 modifier = Modifier.weight(1f),
                 hint = "${Format.compact(state.hashesTried)} hashes",
             )
         }
 
-        // --------------------------------------------------- main control
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(88.dp)
-                .clip(RoundedCornerShape(26.dp))
-                .background(heroBrush)
-                .clickable(onClick = action),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = contentColor,
-                    modifier = Modifier.size(30.dp),
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = contentColor,
-                )
-            }
-        }
+        // ---------------------------------------------------- primary CTA
+        GradientButton(
+            label = ctaLabel,
+            icon = ctaIcon,
+            onClick = ctaAction,
+            gradient = ctaGradient,
+            contentColor = if (isRunning && !isPaused) MaterialTheme.colorScheme.onSurface else Color.White,
+        )
 
-        if (state.running) {
-            Text(
-                text = "Stop",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
+        // ---------------------------------------------------- stop button
+        if (isRunning) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .clickable(onClick = onStop)
                     .padding(vertical = 12.dp),
-            )
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Stop,
+                    contentDescription = "Stop",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    text = "Stop mining",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
 
-        // --------------------------------------------------- thermal chip
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Thermostat,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = "Thermal: $thermal",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = if (state.gpuAvailable) "GPU ready" else "CPU mode",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
         Spacer(Modifier.height(96.dp))
     }
 }
 
-private data class Quad<A, B, C, D>(
-    val first: A,
-    val second: B,
-    val third: C,
-    val fourth: D,
+/** Tiny holder so the when-expression above stays a one-liner per branch. */
+private data class Cta(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val action: () -> Unit,
+    val gradient: List<Color>,
 )

@@ -105,7 +105,7 @@ class MinerE2eTest {
         )
 
         compose.waitForIdle()
-        compose.onNodeWithText("Stop", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Stop", substring = true, useUnmergedTree = true).performClick()
         compose.waitForIdle()
         server.close()
     }

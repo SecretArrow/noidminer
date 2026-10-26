@@ -1,5 +1,6 @@
 package org.secretarrow.noidminer.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,22 +10,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -32,18 +38,31 @@ import org.secretarrow.noidminer.data.MineMode
 import org.secretarrow.noidminer.ui.components.SectionHeader
 import org.secretarrow.noidminer.viewmodel.PoolsViewModel
 
-/** Pool / mode configuration with presets and a live connectivity probe. */
+/**
+ * Pool / mode configuration with presets, atomic Save, and a live
+ * connectivity probe. Save reports its outcome via [PoolsViewModel.SaveState]
+ * — a small badge appears under the buttons so the user always knows whether
+ * their changes persisted (no more silent crashes).
+ */
 @Composable
 fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsState()
     val probe by viewModel.probe.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val saveState by viewModel.saveState.collectAsState()
+    val context = LocalContext.current
     var poolUrl by remember(settings.poolUrl) { mutableStateOf(settings.poolUrl) }
     var poolUser by remember(settings.poolUser) { mutableStateOf(settings.poolUser) }
     var worker by remember(settings.workerName) { mutableStateOf(settings.workerName) }
     var soloRpc by remember(settings.soloRpcUrl) { mutableStateOf(settings.soloRpcUrl) }
 
     LaunchedEffect(Unit) { viewModel.attach(context) }
+    // Auto-clear the Saved badge after 2 seconds so it doesn't linger.
+    LaunchedEffect(saveState) {
+        if (saveState is PoolsViewModel.SaveState.Saved) {
+            kotlinx.coroutines.delay(2000)
+            viewModel.clearSaveState()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -110,26 +129,59 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.Button(
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
                 onClick = {
-                    viewModel.setPoolUrl(poolUrl.trim())
-                    viewModel.setPoolUser(poolUser.trim())
-                    viewModel.setWorker(worker.trim())
-                    viewModel.setSoloRpc(soloRpc.trim())
+                    viewModel.save(
+                        poolUrl = poolUrl,
+                        poolUser = poolUser,
+                        worker = worker,
+                        soloRpc = soloRpc,
+                    )
                 },
-                enabled = true,
-            ) { Text("Save") }
-            androidx.compose.material3.OutlinedButton(
+                enabled = saveState !is PoolsViewModel.SaveState.Saving,
+            ) {
+                if (saveState is PoolsViewModel.SaveState.Saving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.height(18.dp).padding(end = 8.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                Text("Save")
+            }
+            OutlinedButton(
                 onClick = { viewModel.probe(context) },
+                enabled = saveState !is PoolsViewModel.SaveState.Saving,
             ) { Text("Probe") }
+        }
+
+        AnimatedVisibility(visible = saveState !is PoolsViewModel.SaveState.Idle) {
+            val (text, color) = when (saveState) {
+                is PoolsViewModel.SaveState.Saving -> "Menyimpan…" to MaterialTheme.colorScheme.onSurfaceVariant
+                is PoolsViewModel.SaveState.Saved -> "Tersimpan" to MaterialTheme.colorScheme.tertiary
+                is PoolsViewModel.SaveState.Error ->
+                    "Gagal: ${(saveState as PoolsViewModel.SaveState.Error).message}" to
+                        MaterialTheme.colorScheme.error
+                else -> "" to MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            if (text.isNotBlank()) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = color,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+            }
         }
 
         if (probe.isNotBlank()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = androidx.compose.foundation.shape
-                    .RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(16.dp),
             ) {
                 Text(
                     text = probe,
@@ -141,8 +193,9 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
 
         Text(
             text = "Semua mode adalah mining nyata — tidak ada mode demo/simulasi. " +
-                "Pool memakai Stratum SV1 (TCP/TLS); jika pool memakai skema job " +
-                "non-standar, lihat layar Log untuk payload mentah.",
+                "Pool memakai parano1d-stratum-v1 (InnovLab / RPlant / Alphapool) " +
+                "atau Stratum SV1 legacy. Jika pool memakai skema job non-standar, " +
+                "lihat layar Log untuk payload mentah.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -152,17 +205,20 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
 
 @Composable
 private fun PoolPresetRow(viewModel: PoolsViewModel) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         PoolsViewModel.presets.forEach { preset ->
             Card(
                 onClick = { viewModel.applyPreset(context, preset.url) },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = androidx.compose.foundation.shape
-                    .RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(14.dp),
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(preset.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        preset.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     Text(
                         preset.url,
                         style = MaterialTheme.typography.labelSmall,

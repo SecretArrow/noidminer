@@ -10,6 +10,12 @@ package org.secretarrow.noidminer.util
  *
  * Pure Kotlin mirror of the native validator — used as a fallback when the
  * native core is unavailable (e.g. x86_64 emulator builds).
+ *
+ * The verification uses the standard BIP-173 / BIP-350 algorithm:
+ * `polymod(hrp_expand + data) == BECH32M_CONST` (without zero padding).
+ * The previous implementation mixed two variants (padded polymod XOR
+ * BECH32M_CONST compared against the checksum bytes) and rejected every
+ * valid bech32m address — see test `real payout address validates`.
  */
 object Bech32m {
     private const val CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
@@ -57,15 +63,16 @@ object Bech32m {
         return hrp to data
     }
 
+    /**
+     * Standard BIP-350 verification: the polymod over (hrp_expand + data,
+     * data including the 6 checksum chars) must equal [BECH32M_CONST].
+     * No padding, no XOR tricks — the polymod of a valid bech32m string
+     * already returns the constant.
+     */
     private fun verifyChecksum(hrp: String, data: List<Int>): Boolean {
-        if (data.size < 7) return false
-        val checksum = data.takeLast(6)
-        val values = hrpExpand(hrp) + data.dropLast(6) + listOf(0, 0, 0, 0, 0, 0)
-        val computed = polymod(values) xor BECH32M_CONST
-        for (i in checksum.indices) {
-            if ((computed shr (5 * (5 - i))) and 0x1f != checksum[i]) return false
-        }
-        return true
+        if (data.size < 6) return false
+        val values = hrpExpand(hrp) + data
+        return polymod(values) == BECH32M_CONST
     }
 
     /**
@@ -74,6 +81,7 @@ object Bech32m {
      */
     fun isValidO1(address: String): Boolean {
         val trimmed = address.trim()
+        if (trimmed.length != O1_ADDRESS_LENGTH) return false
         val (hrp, data) = decode(trimmed) ?: return false
         if (hrp != HRP) return false
         if (data.size != 58) return false

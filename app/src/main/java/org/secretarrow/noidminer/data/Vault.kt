@@ -42,15 +42,21 @@ class Vault(
 
     var walletAddress: String
         get() = runCatching { prefs.getString(KEY_WALLET, "").orEmpty() }.getOrDefault("")
-        set(value) = runCatching { prefs.edit().putString(KEY_WALLET, value).apply() }
+        set(value) {
+            runCatching { prefs.edit().putString(KEY_WALLET, value).apply() }
+        }
 
     var poolUser: String
         get() = runCatching { prefs.getString(KEY_USER, "").orEmpty() }.getOrDefault("")
-        set(value) = runCatching { prefs.edit().putString(KEY_USER, value).apply() }
+        set(value) {
+            runCatching { prefs.edit().putString(KEY_USER, value).apply() }
+        }
 
     var soloRpcToken: String
         get() = runCatching { prefs.getString(KEY_RPC_TOKEN, "").orEmpty() }.getOrDefault("")
-        set(value) = runCatching { prefs.edit().putString(KEY_RPC_TOKEN, value).apply() }
+        set(value) {
+            runCatching { prefs.edit().putString(KEY_RPC_TOKEN, value).apply() }
+        }
 
     fun clear() {
         runCatching { prefs.edit().clear().apply() }

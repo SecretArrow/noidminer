@@ -291,6 +291,10 @@ class MinerCore(
         )
     }
 
+    private fun log(level: String, message: String) {
+        _log.tryEmit(LogLine(System.currentTimeMillis(), level, message))
+    }
+
     companion object {
         const val BATCH_SIZE = 256
         const val MAX_THREADS = 16

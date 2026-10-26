@@ -24,7 +24,6 @@ use std::time::{Duration, Instant};
 use noid_core::Block128;
 use noid_poseidon2b::batch::FixedFieldNonceBatch;
 use noid_poseidon2b::native::domain::TAG_POWHDR;
-use anyhow::Context as _;
 
 const NONCE_FIELD_INDEX: usize = 10;
 const DIGEST_BATCH: usize = 512;
@@ -51,9 +50,14 @@ fn json_str<'a>(doc: &'a str, key: &str) -> Option<&'a str> {
 
 fn json_bool_true(doc: &str, key: &str) -> bool {
     let token = format!("\"{key}\"");
-    let pos = doc.find(&token)?;
+    let Some(pos) = doc.find(&token) else {
+        return false;
+    };
     let rest = doc[pos + token.len()..].trim_start();
-    rest.strip_prefix(':')?.trim_start().starts_with("true")
+    let Some(after) = rest.strip_prefix(':') else {
+        return false;
+    };
+    after.trim_start().starts_with("true")
 }
 
 // ------------------------------------------------------------- shared TLS IO
@@ -67,6 +71,7 @@ impl SharedTls {
         let mut guard = self.stream.lock().unwrap();
         guard
             .get_mut()
+            .sock
             .set_write_timeout(Some(Duration::from_secs(10)))?;
         guard.write_all(line.as_bytes())?;
         guard.write_all(b"\n")?;
@@ -82,6 +87,7 @@ impl SharedTls {
         let mut guard = self.stream.lock().unwrap();
         guard
             .get_mut()
+            .sock
             .set_read_timeout(Some(Duration::from_secs(20)))?;
         let mut out: Vec<u8> = Vec::with_capacity(1024);
         let mut byte = [0u8; 1];

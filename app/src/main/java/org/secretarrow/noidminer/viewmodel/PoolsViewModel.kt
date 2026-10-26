@@ -119,7 +119,7 @@ class PoolsViewModel : SettingsBackedViewModel() {
      */
     fun probe(@Suppress("UNUSED_PARAMETER") context: Context) {
         runCatching { probeClient?.stop() }
-        val url = _settings.value.poolUrl
+        val url = settings.value.poolUrl
         val client = StratumClient(url)
         probeClient = client
         _probe.value = "connecting to $url …"

@@ -54,6 +54,9 @@ for t in $TARGETS; do
         x86_64-linux-android) ARGS+=(-t x86_64) ;;
     esac
 done
+# 16 KB page-size alignment for Android 15+ (matches CMake linker flag).
+export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384"
+
 cargo ndk "${ARGS[@]}" -o "../${JNI_LIBS}" build --release
 cd ..
 

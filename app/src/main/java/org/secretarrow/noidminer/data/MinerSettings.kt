@@ -15,14 +15,14 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "noid_settings")
 
 /** Mining protocol selection. */
-enum class MineMode { DEMO, POOL, SOLO }
+enum class MineMode { POOL, SOLO }
 
 /** Hashing backend preference. */
 enum class BackendPref { AUTO, CPU_ONLY, GPU_ONLY }
 
 /** Immutable settings snapshot used by the engine and service. */
 data class MinerSettings(
-    val mode: MineMode = MineMode.DEMO,
+    val mode: MineMode = MineMode.POOL,
     val backendPref: BackendPref = BackendPref.AUTO,
     val poolUrl: String = "stratum+tcp://eu1.alphapool.tech:19610",
     val poolUser: String = "",
@@ -61,7 +61,7 @@ class MinerSettingsRepository(
 
     val settings: Flow<MinerSettings> = context.dataStore.data.map { p ->
         MinerSettings(
-            mode = p[Keys.MODE]?.let { runCatching { MineMode.valueOf(it) }.getOrNull() } ?: MineMode.DEMO,
+            mode = p[Keys.MODE]?.let { runCatching { MineMode.valueOf(it) }.getOrNull() } ?: MineMode.POOL,
             backendPref = p[Keys.BACKEND]?.let { runCatching { BackendPref.valueOf(it) }.getOrNull() }
                 ?: BackendPref.AUTO,
             poolUrl = p[Keys.POOL_URL] ?: "stratum+tcp://eu1.alphapool.tech:19610",
@@ -85,7 +85,7 @@ class MinerSettingsRepository(
         context.dataStore.edit { prefs ->
             val current = MinerSettings(
                 mode = prefs[Keys.MODE]?.let { runCatching { MineMode.valueOf(it) }.getOrNull() }
-                    ?: MineMode.DEMO,
+                    ?: MineMode.POOL,
                 backendPref = prefs[Keys.BACKEND]?.let {
                     runCatching { BackendPref.valueOf(it) }.getOrNull()
                 } ?: BackendPref.AUTO,

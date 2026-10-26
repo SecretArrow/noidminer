@@ -14,8 +14,8 @@ android {
         applicationId = "org.secretarrow.noidminer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -40,6 +40,12 @@ android {
 
     signingConfigs {
         create("release") {
+            // Keystore can arrive as a decoded file path (NOID_KEYSTORE_FILE)
+            // or as raw base64 (NOID_KEYSTORE_BASE64). Accept both so a
+            // workflow wiring mistake can never silently produce an
+            // unsigned APK again (the v1.0.0 install bug).
+            val ksFile = (System.getenv("NOID_KEYSTORE_FILE")
+                ?: providers.gradleProperty("NOID_KEYSTORE_FILE").orNull)?.takeIf { it.isNotBlank() }
             val ksB64 = (System.getenv("NOID_KEYSTORE_BASE64")
                 ?: providers.gradleProperty("NOID_KEYSTORE_BASE64").orNull)?.takeIf { it.isNotBlank() }
             val ksPass = (System.getenv("NOID_KEYSTORE_PASSWORD")
@@ -48,12 +54,17 @@ android {
                 ?: providers.gradleProperty("NOID_KEY_ALIAS").orNull)?.takeIf { it.isNotBlank() }
             val keyPass = (System.getenv("NOID_KEY_PASSWORD")
                 ?: providers.gradleProperty("NOID_KEY_PASSWORD").orNull)?.takeIf { it.isNotBlank() }
-            if (ksB64 != null && ksPass != null && alias != null && keyPass != null) {
-                val tmp = File.createTempFile("noidminer", ".jks").apply {
+            val store: File? = when {
+                ksFile != null -> File(ksFile)
+                ksB64 != null -> File.createTempFile("noidminer", ".jks").apply {
                     writeBytes(Base64.getDecoder().decode(ksB64))
                     deleteOnExit()
                 }
-                storeFile = tmp
+                else -> null
+            }
+            if (store != null && ksPass != null && alias != null && keyPass != null) {
+                require(store.length() > 0) { "keystore file is empty" }
+                storeFile = store
                 storePassword = ksPass
                 keyAlias = alias
                 keyPassword = keyPass
@@ -76,8 +87,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Sign with the CI-injected keystore when present; otherwise the
-            // release workflow produces a debug-signed artifact (installable).
+            // Sign with the CI-injected keystore. If the keystore is absent
+            // the build fails loudly in the release workflow (hard gate),
+            // never shipping an unsigned APK.
             if (signingConfigs.getByName("release").storeFile != null) {
                 signingConfig = signingConfigs.getByName("release")
             }

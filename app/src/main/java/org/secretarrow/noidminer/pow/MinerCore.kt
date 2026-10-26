@@ -11,7 +11,7 @@ import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/** One mining template — identical shape across Demo / Stratum / Solo RPC. */
+/** One mining template — identical shape across Pool (Stratum) / Solo RPC. */
 data class MiningJob(
     val templateId: String,
     val powFieldsHex: String,

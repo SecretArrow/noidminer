@@ -27,38 +27,6 @@ object PoolPresets {
 }
 
 /**
- * DEMO source: self-contained templates with an easy target so the app can
- * be exercised end-to-end (and on the emulator) without network access.
- */
-class DemoJobSource(
-    private val onShare: (MiningJob, String) -> Boolean = { _, _ -> true },
-) : JobSource {
-    override fun nextJob(): MiningJob? {
-        val rng = SecureRandom()
-        val fields = ByteArray(256).also(rng::nextBytes)
-        fields[160] = 0 // nonce lane placeholder (replaced per hash anyway)
-        return MiningJob(
-            templateId = "demo-${System.currentTimeMillis() / 1000}",
-            powFieldsHex = Hex.encode(fields),
-            targetLeHex = EASY_TARGET,
-            height = (System.currentTimeMillis() / 10_000) % 100_000,
-            expiresAtMs = System.currentTimeMillis() + 120_000,
-        )
-    }
-
-    override fun submit(job: MiningJob, nonceLeHex: String, hashHex: String): Boolean =
-        onShare(job, hashHex)
-
-    override fun close() = Unit
-
-    companion object {
-        /** Looseness makes a share land every few seconds on demo hardware. */
-        const val EASY_TARGET: String =
-            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff0fffffff"
-    }
-}
-
-/**
  * POOL source: wraps [StratumClient], decodes notify events into jobs and
  * submits shares with the standard SV1 argument order.
  */

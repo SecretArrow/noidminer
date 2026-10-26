@@ -20,7 +20,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.secretarrow.noidminer.MainActivity
 import org.secretarrow.noidminer.R
-import org.secretarrow.noidminer.data.DemoJobSource
 import org.secretarrow.noidminer.data.MinerSettings
 import org.secretarrow.noidminer.data.MinerSettingsRepository
 import org.secretarrow.noidminer.data.MineMode
@@ -125,7 +124,6 @@ class MinerService : Service() {
             ServiceLocator.emitServiceLog(level, message)
         }
         return when (settings.mode) {
-            MineMode.DEMO -> DemoJobSource { _, _ -> true }
             MineMode.POOL -> PoolJobSource(settings.poolUrl, vault.poolUser.ifBlank { settings.poolUser }, logger)
             MineMode.SOLO -> SoloJobSource(settings.soloRpcUrl, vault.soloRpcToken, vault.walletAddress, logger)
         }

@@ -65,11 +65,23 @@ jobs:
           fi
       - name: Assemble release
         env:
+          # Both delivery paths are wired: the decoded file (NOID_KEYSTORE_FILE)
+          # and the raw base64 (NOID_KEYSTORE_BASE64) — Gradle accepts either.
           NOID_KEYSTORE_FILE: ${{ env.NOID_KEYSTORE_FILE }}
+          NOID_KEYSTORE_BASE64: ${{ secrets.NOID_KEYSTORE_BASE64 }}
           NOID_KEYSTORE_PASSWORD: ${{ secrets.NOID_KEYSTORE_PASSWORD }}
           NOID_KEY_ALIAS: ${{ secrets.NOID_KEY_ALIAS }}
           NOID_KEY_PASSWORD: ${{ secrets.NOID_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease
+      - name: Verify APK is signed (hard gate)
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          if ! keytool -printcert -jarfile "$APK" > /dev/null 2>&1; then
+            echo "::error::Release APK is NOT signed — refusing to publish (this was the v1.0.0 install bug)"
+            exit 1
+          fi
+          echo "APK signature OK:"
+          keytool -printcert -jarfile "$APK" | head -6
       - name: Checksums
         run: |
           cd app/build/outputs/apk/release
@@ -92,8 +104,9 @@ jobs:
 
           - CPU native (ARM PMULL) + GPU OpenCL (self-check otomatis)
           - Background mining (foreground service + guards)
-          - Mode: Demo / Pool (Stratum) / Solo node
-          Lihat README untuk cara instal." || \
+          - Mode: Pool (Stratum SV1 TCP/TLS) / Solo node (JSON-RPC)
+          - Signed APK — v1+v2+v3, 16 KB page-size ready (Android 15+)
+          Lihat README untuk cara instal & troubleshooting." || \
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
       - name: Upload APK artifact (always)
         uses: actions/upload-artifact@v4

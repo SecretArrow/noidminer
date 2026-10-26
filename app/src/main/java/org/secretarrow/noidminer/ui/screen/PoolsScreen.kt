@@ -58,7 +58,6 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
                     label = {
                         Text(
                             text = when (mode) {
-                                MineMode.DEMO -> "Demo"
                                 MineMode.POOL -> "Pool"
                                 MineMode.SOLO -> "Solo node"
                             },
@@ -137,9 +136,9 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
         }
 
         Text(
-            text = "Catatan: mode Demo berjalan mandiri (tanpa jaringan) untuk menguji " +
-                "performa perangkat. Mode Pool memakai Stratum SV1 (TCP/TLS); jika pool " +
-                "memakai skema job non-standar, lihat layar Log untuk payload mentah.",
+            text = "Semua mode adalah mining nyata — tidak ada mode demo/simulasi. " +
+                "Pool memakai Stratum SV1 (TCP/TLS); jika pool memakai skema job " +
+                "non-standar, lihat layar Log untuk payload mentah.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

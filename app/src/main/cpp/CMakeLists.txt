@@ -26,3 +26,8 @@ if(NOID_HAS_NATIVE_POW)
 else()
     target_link_libraries(noid_jni ${log-lib} dl)
 endif()
+
+# 16 KB page-size compatibility: Android 15+ devices can boot with 16 KB
+# pages; ELF segments aligned to 4 KB only refuse to load there. Kept
+# consistent with RUSTFLAGS in scripts/build-rust.sh (Rust core).
+target_link_options(noid_jni PRIVATE "-Wl,-z,max-page-size=16384")

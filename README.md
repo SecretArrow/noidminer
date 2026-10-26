@@ -25,7 +25,7 @@ dengan foreground service, UI/UX Material 3 yang didesain ulang total, dan
 | **Fallback** | Engine **software murni Kotlin** — aplikasi tetap jalan di x86_64/emulator atau perangkat tanpa native lib |
 | **Background** | Foreground service (`specialUse`) + notifikasi live (hashrate, shares) + aksi Pause/Resume/Stop + partial wake lock |
 | **Guard** | Thermal (pause di SEVERE, throttle di MODERATE), battery (< X% / hanya saat charging / battery saver), auto-resume |
-| **Mode** | **Demo** (mandiri, tanpa jaringan), **Pool** (Stratum SV1 TCP/TLS), **Solo** (JSON-RPC node Parano1d) |
+| **Mode** | **Pool** (Stratum SV1 TCP/TLS) dan **Solo** (JSON-RPC node Parano1d) — **tanpa mode demo/simulasi**, semua hashrate/share nyata |
 | **Hardware info** | SoC, cluster big/mid/LITTLE, RAM, ABI, GPU vendor/device, benchmark 3 detik |
 | **Keamanan** | Wallet di `EncryptedSharedPreferences`, dikecualikan dari cloud backup; token tidak pernah masuk repo |
 
@@ -34,16 +34,26 @@ dengan foreground service, UI/UX Material 3 yang didesain ulang total, dan
 1. Unduh APK terbaru dari [Releases](https://github.com/SecretArrow/noidminer/releases)
    (`NoidMiner-vX.Y.Z-arm64.apk`, arm64-v8a).
 2. Install (aktifkan "Install unknown apps" bila diminta).
-3. Buka NoidMiner → tab **Mine** → **Start mining** (mode **Demo** langsung jalan).
-4. Untuk mining nyata: tab **Pools** → pilih mode **Pool** (isi Stratum URL + user
-   `o1…address`) atau **Solo node** (URL RPC node Parano1d Anda).
+3. Buka NoidMiner → tab **Pools** → pilih mode **Pool** (Stratum URL + user
+   `o1…address`) atau **Solo node** (URL RPC node Parano1d) → **Save**.
+4. Tab **Mine** → **Start mining**. Mining berjalan di background dengan
+   notifikasi live (Pause/Resume/Stop dari notifikasi).
+
+### Troubleshooting Instalasi
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| **"Aplikasi tidak diinstal"** | APK v1.0.0 lama **tidak ditandatangani** (bug build) atau konflik tanda tangan dengan build sebelumnya | **Uninstall NoidMiner lama dulu**, lalu install v1.1.0 — APK sekarang signed v1+v2+v3 |
+| "Aplikasi tidak diinstal" di HP lawas | APK berisi lib `arm64-v8a`; perangkat 32-bit (armeabi-v7a/x86) tidak didukung | Gunakan perangkat arm64 (hampir semua HP tahun 2016+) |
+| "Ada masalah saat menguraikan paket" | File korup — mis. artifact CI terunduh sebagai `.zip` lama di-rename `.apk` | Unduh langsung dari halaman **Releases**, cek SHA256SUMS.txt |
+| Install OK tapi langsung close di Android 15+ | Perangkat 16 KB page-size + versi app lama (4 KB-aligned) | Gunakan **v1.1.0+** — native lib sudah 16 KB-aligned |
 
 ## CI/CD (GitHub Actions)
 
 | Workflow | Trigger | Isi |
 |---|---|---|
 | **CI** | push/PR | `ktlint` + `detekt` (statik, ±1 menit) ∥ **golden vectors Rust** + unit test JVM ∥ build Rust NDK + `assembleDebug` + `lintDebug` → artifact APK debug |
-| **E2E** | push main | Emulator ATD API 30 (`android-emulator-runner`) → `connectedDebugAndroidTest`: navigasi semua tab + start/stop mining demo |
+| **E2E** | push main | Emulator ATD API 30 (`android-emulator-runner`) → `connectedDebugAndroidTest`: navigasi semua tab + **e2e stratum nyata** (server SV1 lokal: subscribe → notify → share → `mining.submit` diterima) |
 | **Release** | tag `v*` | Build Rust arm64 → `assembleRelease` (signed via secrets) → **GitHub Release** + SHA256SUMS |
 | **Auto-fix** | CI gagal di main / manual | `ktlint --format` → commit otomatis oleh `github-actions[bot]` |
 

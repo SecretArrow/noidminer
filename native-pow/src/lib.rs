@@ -136,8 +136,6 @@ mod bech32m_o1 {
         if address.len() < 8 || address.chars().any(|c| c as u32 > 126) {
             return None;
         }
-        let (pos, c) = address.char_indices().rev().find(|(_, c)| *c >= 'a' && *c <= 'z')?;
-        let _ = c;
         let lower = address.to_lowercase();
         let upper = address.to_uppercase();
         if address != lower && address != upper {
@@ -160,7 +158,7 @@ mod bech32m_o1 {
     /// Validate: lowercase `o1…` address with a correct Bech32m checksum.
     #[must_use]
     pub fn validate(address: &str) -> bool {
-        let Some((hrp, data)) = decode_to_5bit(address) else {
+        let Some((hrp, mut data)) = decode_to_5bit(address) else {
             return false;
         };
         if hrp != "o1" || data.len() < 7 {

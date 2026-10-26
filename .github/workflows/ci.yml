@@ -70,10 +70,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
+      - name: Rust toolchain (preinstalled rustup + android target)
+        run: |
+          rustup toolchain install stable --profile minimal 2>/dev/null || true
+          rustup default stable
+          rustup target add aarch64-linux-android
       - name: Cache Rust (registry + git + target + toolchain)
         uses: actions/cache@v4
         with:

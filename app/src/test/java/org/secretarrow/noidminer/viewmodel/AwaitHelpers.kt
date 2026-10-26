@@ -23,10 +23,10 @@ fun awaitTrue(timeoutMs: Long = 10_000, probe: () -> Boolean) {
     }
 }
 
-fun <T : Any> awaitValue(timeoutMs: Long = 10_000, probe: () -> T, isValid: (T) -> Boolean): T {
-    var last = probe()
+fun <T : Any> awaitValue(timeoutMs: Long = 10_000, probe: () -> T?, isValid: (T) -> Boolean): T {
+    var last: T? = probe()
     val deadline = System.currentTimeMillis() + timeoutMs
-    while (!isValid(last)) {
+    while (last == null || !isValid(last)) {
         if (System.currentTimeMillis() > deadline) {
             throw AssertionError("condition not met within ${timeoutMs}ms (last=$last)")
         }

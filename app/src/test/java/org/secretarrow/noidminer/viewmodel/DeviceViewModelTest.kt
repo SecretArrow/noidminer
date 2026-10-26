@@ -66,11 +66,11 @@ class DeviceViewModelTest {
         vm.attach(context)
         vm.runBenchmark()
         val result = awaitValue(timeoutMs = 30_000, probe = { vm.benchmark.value.result }) {
-            it != null
+            it.isNotBlank()
         }
-        assertEquals(
-            true,
-            result!!.contains("H/s") ||
+        assertTrue(
+            "unexpected benchmark output: $result",
+            result.contains("H/s") ||
                 result.contains("kH/s") ||
                 result.contains("MH/s") ||
                 result.contains("GH/s")

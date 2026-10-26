@@ -26,8 +26,9 @@ class MineViewModelTest {
         val core = ServiceLocator.minerCore()
         val vm = MineViewModel()
 
-        vm.pause("user")
+        vm.pause()
         assertTrue(core.paused.get())
+        assertTrue(core.state.value.pausedReason == "user")
 
         vm.resume()
         assertFalse(core.paused.get())
@@ -44,7 +45,7 @@ class MineViewModelTest {
 
         core.resume()
         awaitTrue { !vm.state.value.paused }
-        vm.pause("user")
+        vm.pause()
         awaitTrue { vm.state.value.paused && vm.state.value.pausedReason == "user" }
     }
 
@@ -53,7 +54,7 @@ class MineViewModelTest {
         val core = ServiceLocator.minerCore()
         val vm = MineViewModel()
         repeat(3) {
-            vm.pause("user")
+            vm.pause()
             vm.resume()
         }
         assertFalse(core.paused.get())

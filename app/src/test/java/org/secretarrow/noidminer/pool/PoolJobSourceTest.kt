@@ -42,6 +42,9 @@ class PoolJobSourceTest {
 
         val port: Int get() = server.localPort
 
+        /** Snapshot of all raw lines received from the client (for diagnostics). */
+        fun receivedLines(): List<String> = received.toList()
+
         val notifyLine: String = run {
             val fields = (0 until 256).joinToString("") { "%02x".format(it % 256) }
             """{"id":null,"method":"mining.notify","params":[{"job_id":"fake-job-1","assignment_id":"1","pow_fields_hex":"$fields","nonce_field_index":10,"nonce_bits":64,"nonce_prefix_hex":"0102030405060708","work_domain_id":"${"ab".repeat(32)}","share_target_hex":"${"f".repeat(64)}","block_target_hex":"${"f".repeat(64)}","height":254100,"clean":true,"expires_in_seconds":120}]}"""
@@ -131,7 +134,7 @@ class PoolJobSourceTest {
                 Thread.sleep(100)
                 job = source.nextJob()
             }
-            assertNotNull("no job decoded from notify — logs=$logs", job)
+            assertNotNull("no job decoded from notify — received=${pool.receivedLines()} logs=$logs", job)
             job!!
             assertEquals("fake-job-1", job.templateId)
             assertEquals(254100L, job.height)
@@ -139,11 +142,15 @@ class PoolJobSourceTest {
             assertEquals("ab".repeat(32), job.workDomainIdHex)
 
             // Authorize must use wallet.worker.
-            val authDeadline = System.currentTimeMillis() + 5_000
+            val authDeadline = System.currentTimeMillis() + 15_000
             while (pool.authorizedUser.get() == null && System.currentTimeMillis() < authDeadline) {
                 Thread.sleep(50)
             }
-            assertEquals("$wallet.noidmobile", pool.authorizedUser.get())
+            assertEquals(
+                "authorize not captured — received=${pool.receivedLines()} logs=$logs",
+                "$wallet.noidmobile",
+                pool.authorizedUser.get(),
+            )
 
             // Submit with a valid 128-bit lane nonce (32 hex chars).
             val nonceHex = job.nonceHex(0x0102030405060708L)

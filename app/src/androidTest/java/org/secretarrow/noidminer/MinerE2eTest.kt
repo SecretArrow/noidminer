@@ -74,6 +74,12 @@ class MinerE2eTest {
 
         compose.waitForIdle()
         compose.onNodeWithText("Start mining").performClick()
+        // The Start button opens a backend picker dialog. The x86_64 emulator
+        // has no GPU, so tap the CPU option — the dialog calls onStart which
+        // starts MinerService with CPU_ONLY pref. Use substring match on the
+        // CPU option's subtitle (which contains "core ·") to disambiguate
+        // from the "CPU" status pill on the Mine screen.
+        compose.onNodeWithText("core ·", substring = true).performClick()
 
         // The service must connect, receive the notify and submit a real
         // share produced by the hashing engine. Poll with live health

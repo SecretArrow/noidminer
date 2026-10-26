@@ -29,9 +29,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             NoidTheme {
                 NoidNavHost(
-                    startMining = {
+                    startMining = { pref ->
                         requestNotificationPermission()
-                        mineViewModel.startMining(this)
+                        mineViewModel.startMining(this, pref)
                     },
                     pauseMining = mineViewModel::pause,
                     resumeMining = mineViewModel::resume,

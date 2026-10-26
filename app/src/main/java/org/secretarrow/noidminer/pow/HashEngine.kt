@@ -201,6 +201,74 @@ object EngineSelector {
         return Result(engine, gpuAvailable, gpuDevice, selfCheck)
     }
 
+    /**
+     * Backend-aware selection — maps a [BackendPref] to a `preferGpu` flag and
+     * delegates to [select]. Used by the new start-time backend picker so the
+     * Mine screen can let the user explicitly choose CPU vs GPU before mining.
+     *
+     * - AUTO     → preferGpu=true  (try GPU, fall back to CPU on failure)
+     * - CPU_ONLY → preferGpu=false (skip GPU entirely — user opted out)
+     * - GPU_ONLY → preferGpu=true  (try GPU; if unavailable the engine falls
+     *   back to CPU because GpuEngine is only constructed when selfCheck passes.
+     *   The user is warned about the fallback via MineViewModel.backendState.)
+     */
+    fun select(backendPref: org.secretarrow.noidminer.data.BackendPref): Result =
+        when (backendPref) {
+            org.secretarrow.noidminer.data.BackendPref.AUTO -> select(preferGpu = true)
+            org.secretarrow.noidminer.data.BackendPref.CPU_ONLY -> select(preferGpu = false)
+            org.secretarrow.noidminer.data.BackendPref.GPU_ONLY -> select(preferGpu = true)
+        }
+
+    /**
+     * Probe the device's hashing backends WITHOUT constructing an engine —
+     * used by the backend picker dialog to show the user what's available
+     * before they tap Start. Cheap: native loaded once, OpenCL probed once,
+     * both cached by the JNI layer.
+     */
+    data class BackendProbe(
+        val cpuLabel: String,
+        val cpuAvailable: Boolean,
+        val cpuCores: Int,
+        val gpuLabel: String?,
+        val gpuAvailable: Boolean,
+        val gpuSelfCheckPassed: Boolean,
+    )
+
+    fun probe(): BackendProbe {
+        val nativeAvailable = NativePow.ensureLoaded()
+        val cores = Runtime.getRuntime().availableProcessors()
+        val cpuLabel = if (nativeAvailable) {
+            "Native (ARM PMULL)" // loaded by native core
+        } else {
+            "Software (pure Kotlin)"
+        }
+        var gpuAvail = false
+        var gpuName: String? = null
+        var selfCheck = false
+        if (nativeAvailable && !gpuDisabled) {
+            runCatching {
+                gpuAvail = NativePow.openclAvailableNative()
+                gpuName = NativePow.openclDeviceNameNative()
+                if (gpuAvail) {
+                    val native = NativeEngine()
+                    selfCheck = gpuSelfCheck(native)
+                    if (!selfCheck) {
+                        gpuDisabled = true
+                        gpuAvail = false
+                    }
+                }
+            }.onFailure { Log.w(TAG, "GPU probe failed: ${it.message}") }
+        }
+        return BackendProbe(
+            cpuLabel = cpuLabel,
+            cpuAvailable = true, // CPU (native or software) is always available
+            cpuCores = cores,
+            gpuLabel = gpuName,
+            gpuAvailable = gpuAvail,
+            gpuSelfCheckPassed = selfCheck,
+        )
+    }
+
     /** GPU must match the native CPU digest-for-digest on the probe batch. */
     private fun gpuSelfCheck(cpu: HashEngine): Boolean {
         val count = 8

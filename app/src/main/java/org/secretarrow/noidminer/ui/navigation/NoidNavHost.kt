@@ -54,7 +54,7 @@ private const val SETTINGS_ROUTE = "settings"
  */
 @Composable
 fun NoidNavHost(
-    startMining: () -> Unit,
+    startMining: (org.secretarrow.noidminer.data.BackendPref) -> Unit,
     pauseMining: () -> Unit,
     resumeMining: () -> Unit,
     stopMining: () -> Unit,

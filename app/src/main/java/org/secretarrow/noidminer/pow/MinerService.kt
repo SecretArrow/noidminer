@@ -48,6 +48,14 @@ class MinerService : Service() {
     private lateinit var guardMonitor: GuardMonitor
     private var wakeLock: PowerManager.WakeLock? = null
 
+    /**
+     * Per-start backend override from the MineScreen picker. Cleared after
+     * each mining run so the next start (e.g. auto-start on boot) falls back
+     * to the persisted [MinerSettings.backendPref].
+     */
+    @Volatile
+    private var currentBackendPref: org.secretarrow.noidminer.data.BackendPref? = null
+
     override fun onCreate() {
         super.onCreate()
         settingsRepo = ServiceLocator.settingsRepository(this)
@@ -77,6 +85,14 @@ class MinerService : Service() {
             }
             else -> Unit
         }
+        // Read the per-start backend override (MineScreen picker). The extra
+        // is the BackendPref enum name; absent → null → fall back to settings.
+        intent?.getStringExtra(EXTRA_BACKEND_PREF)?.let { name ->
+            currentBackendPref = runCatching {
+                org.secretarrow.noidminer.data.BackendPref
+                    .valueOf(name)
+            }.getOrNull()
+        }
         startForegroundCompat()
         scope.launch { runMiningLoop() }
         return START_STICKY
@@ -91,7 +107,12 @@ class MinerService : Service() {
             ?: ServiceLocator.hardwareInfo().suggestedThreads()
         val source = buildJobSource(settings)
 
-        core.start(source, threadCount)
+        // Backend pref: the start-time picker (MineScreen) can override the
+        // persisted Settings.backendPref by passing an Intent extra. This lets
+        // the user try GPU once without changing the saved default. When the
+        // extra is absent (e.g. BootReceiver auto-start), fall back to settings.
+        val backendPref = currentBackendPref ?: settings.backendPref
+        core.start(source, threadCount, backendPref)
         updateNotification()
 
         // Watch loop: guards + hashrate refresh.
@@ -238,6 +259,10 @@ class MinerService : Service() {
     private fun stopMining() {
         core.stop()
         releaseWakeLock()
+        // Clear the per-start backend override so the next mining run (e.g.
+        // auto-start on boot) falls back to the persisted settings.backendPref
+        // instead of reusing the user's last manual picker choice.
+        currentBackendPref = null
         stopSelf()
     }
 
@@ -268,6 +293,15 @@ class MinerService : Service() {
         const val ACTION_PAUSE = "org.secretarrow.noidminer.PAUSE"
         const val ACTION_RESUME = "org.secretarrow.noidminer.RESUME"
         const val ACTION_STOP = "org.secretarrow.noidminer.STOP"
+
+        /**
+         * Intent extra for the per-start backend override. Value is the
+         * [org.secretarrow.noidminer.data.BackendPref] enum name (AUTO /
+         * CPU_ONLY / GPU_ONLY). When absent, the service falls back to the
+         * persisted [org.secretarrow.noidminer.data.MinerSettings.backendPref].
+         */
+        const val EXTRA_BACKEND_PREF = "backend_pref"
+
         private const val NOTIF_REFRESH_MS = 2_000L
         private const val WAKELOCK_MS = 24L * 60 * 60 * 1000
     }

@@ -16,17 +16,26 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cpu
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.secretarrow.noidminer.data.BackendPref
 import org.secretarrow.noidminer.ui.components.GlassCard
 import org.secretarrow.noidminer.ui.components.GradientButton
 import org.secretarrow.noidminer.ui.components.HashrateChart
@@ -59,12 +69,14 @@ import org.secretarrow.noidminer.viewmodel.MineViewModel
  *  4. Primary CTA — GradientButton (Start / Pause / Resume)
  *  5. Stop button — subtle text below CTA (only visible when running)
  *
- * Hero number uses displayMedium (44sp Black). Gauge max is 2x the current
- * hashrate so the arc never saturates at idle and always shows movement.
+ * Start flow: tapping "Start mining" opens a backend picker dialog showing
+ * the available CPU (cores, native/software) and GPU (device name,
+ * self-check status). The user picks one and the dialog calls
+ * onStart(pref) which forwards to MinerService via Intent extra.
  */
 @Composable
 fun MineScreen(
-    onStart: () -> Unit,
+    onStart: (BackendPref) -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
@@ -73,6 +85,7 @@ fun MineScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val thermal by viewModel.thermal.collectAsState()
+    val backendProbe by viewModel.backendProbe.collectAsState()
 
     val isRunning = state.running
     val isPaused = state.paused
@@ -85,15 +98,37 @@ fun MineScreen(
     val hashrateHps = state.hashrateHps
     val isActive = isRunning && !isPaused
 
+    // Backend picker dialog — shown when the user taps Start. The dialog
+    // displays the probed backends (CPU/GPU) and lets the user choose.
+    var showBackendPicker by remember { mutableStateOf(false) }
+
     // CTA configuration — flips between three states with distinct gradients.
-    val (ctaLabel, ctaIcon, ctaAction, ctaGradient) = when {
-        !isRunning -> Cta("Start mining", Icons.Filled.PlayArrow, onStart, GradientHero)
-        isPaused -> Cta("Resume", Icons.Filled.PlayArrow, onResume, GradientMining)
-        else -> Cta("Pause", Icons.Filled.Pause, onPause, GradientIdle)
+    val (ctaLabel, ctaIcon, ctaGradient) = when {
+        !isRunning -> CtaConfig("Start mining", Icons.Filled.PlayArrow, GradientHero)
+        isPaused -> CtaConfig("Resume", Icons.Filled.PlayArrow, GradientMining)
+        else -> CtaConfig("Pause", Icons.Filled.Pause, GradientIdle)
+    }
+    val ctaAction: () -> Unit = when {
+        !isRunning -> {
+            { showBackendPicker = true }
+        }
+        isPaused -> onResume
+        else -> onPause
     }
 
     // Gauge max — adaptive so the arc shows movement but never saturates.
     val gaugeMax = (hashrateHps * 2.0).coerceAtLeast(50.0).toFloat()
+
+    if (showBackendPicker) {
+        BackendPickerDialog(
+            probe = backendProbe,
+            onDismiss = { showBackendPicker = false },
+            onSelect = { pref ->
+                showBackendPicker = false
+                onStart(pref)
+            },
+        )
+    }
 
     Column(
         modifier = modifier
@@ -259,10 +294,173 @@ fun MineScreen(
     }
 }
 
+/**
+ * Backend picker dialog — shown when the user taps Start mining.
+ *
+ * Lists the available hashing backends (CPU + GPU if present) with their
+ * key specs (cores, device name, self-check status) and lets the user
+ * pick one. The choice is forwarded to onStart(pref) which routes it
+ * through to MinerService via Intent extra.
+ *
+ * While the probe is loading (first composition), a spinner is shown
+ * instead of the list — the probe runs on Dispatchers.Default so the
+ * main thread is never blocked.
+ */
+@Composable
+private fun BackendPickerDialog(
+    probe: org.secretarrow.noidminer.pow.EngineSelector.BackendProbe?,
+    onDismiss: () -> Unit,
+    onSelect: (BackendPref) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Pilih backend mining",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            if (probe == null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = "Memeriksa hardware…",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // CPU option — always available
+                    BackendOption(
+                        icon = Icons.Filled.Cpu,
+                        title = "CPU",
+                        subtitle = "${probe.cpuCores} core · ${probe.cpuLabel}",
+                        badge = null,
+                        onClick = { onSelect(BackendPref.CPU_ONLY) },
+                    )
+                    // Auto option — try GPU, fall back to CPU
+                    BackendOption(
+                        icon = Icons.Filled.Memory,
+                        title = "Auto (GPU → CPU fallback)",
+                        subtitle = if (probe.gpuAvailable) {
+                            "GPU tersedia, CPU sebagai backup"
+                        } else {
+                            "GPU tidak tersedia, akan pakai CPU"
+                        },
+                        badge = if (probe.gpuAvailable) "RECOMMENDED" else null,
+                        onClick = { onSelect(BackendPref.AUTO) },
+                    )
+                    // GPU option — only enabled when self-check passed
+                    BackendOption(
+                        icon = Icons.Filled.Memory,
+                        title = "GPU only",
+                        subtitle = when {
+                            !probe.gpuAvailable -> "Tidak ada GPU OpenCL terdeteksi"
+                            !probe.gpuSelfCheckPassed -> "Self-check gagal — digest GPU ≠ CPU"
+                            else -> probe.gpuLabel ?: "GPU"
+                        },
+                        badge = when {
+                            !probe.gpuAvailable -> "OFFLINE"
+                            !probe.gpuSelfCheckPassed -> "FAILED"
+                            else -> "READY"
+                        },
+                        enabled = probe.gpuAvailable && probe.gpuSelfCheckPassed,
+                        onClick = { onSelect(BackendPref.GPU_ONLY) },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        },
+    )
+}
+
+@Composable
+private fun BackendOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    badge: String?,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val bg = if (enabled) {
+        MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    }
+    val fg = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = fg,
+            modifier = Modifier.size(24.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = fg,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = fg.copy(alpha = 0.8f),
+            )
+        }
+        if (badge != null) {
+            val (badgeColor, badgeIcon) = when (badge) {
+                "READY" -> MaterialTheme.colorScheme.tertiary to Icons.Filled.Verified
+                "FAILED" -> MaterialTheme.colorScheme.error to Icons.Filled.WarningAmber
+                "OFFLINE" -> MaterialTheme.colorScheme.onSurfaceVariant to Icons.Filled.WarningAmber
+                else -> MaterialTheme.colorScheme.primary to Icons.Filled.Verified
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    imageVector = badgeIcon,
+                    contentDescription = null,
+                    tint = badgeColor,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = badgeColor,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
 /** Tiny holder so the when-expression above stays a one-liner per branch. */
-private data class Cta(
+private data class CtaConfig(
     val label: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val action: () -> Unit,
     val gradient: List<Color>,
 )

@@ -151,11 +151,27 @@ class MinerCore(
 
     private val rng = SecureRandom()
 
-    /** Starts the workers. Safe to call repeatedly — no-op when running. */
+    /**
+     * Starts the workers. Safe to call repeatedly — no-op when running.
+     *
+     * @param backendPref explicit backend choice from the start-time picker.
+     *   When null, falls back to the engineProvider's default (which reads
+     *   settings.backendPref). The picker passes a non-null value so the
+     *   user's per-session choice wins over the persisted Settings pref —
+     *   this lets the user try GPU once without changing the saved default.
+     */
     @Synchronized
-    fun start(source: JobSource, threadCount: Int) {
+    fun start(
+        source: JobSource,
+        threadCount: Int,
+        backendPref: org.secretarrow.noidminer.data.BackendPref? = null,
+    ) {
         if (running.get()) return
-        val selection = engineProvider()
+        val selection = if (backendPref != null) {
+            EngineSelector.select(backendPref)
+        } else {
+            engineProvider()
+        }
         engineResult = selection
         jobSource = source
         hashes.set(0)
@@ -175,7 +191,11 @@ class MinerCore(
             startedAtMs = System.currentTimeMillis(),
             gpuAvailable = selection.gpuAvailable,
         )
-        log("info", "backend=${selection.engine.name} threads=$threadCount")
+        log(
+            "info",
+            "backend=${selection.engine.name} threads=$threadCount " +
+                "pref=${backendPref ?: "default"} gpuAvail=${selection.gpuAvailable}",
+        )
         val safeThreads = threadCount.coerceIn(1, MAX_THREADS)
         val base = rng.nextLong() and 0x00FF_FFFF_FFFF_FFFFL
         threads = (0 until safeThreads).map { id ->

@@ -18,11 +18,6 @@ object Poseidon2bConstants {
     /** Capacity IV for TAG_POWHDR ("POWHDR__") in flat basis. */
     val IV_FLAT: Array<LongArray> = arrayOf(longArrayOf(0x780444e534382e77UL.toLong(), 0x9209c9ae2d672e91UL.toLong()), longArrayOf(0x43b28cd323f5f753UL.toLong(), 0xcf01bad401c8a8d1UL.toLong()))
 
-    /** Round constants RC[lane][round] (4 x 66). */
-    val RC_FLAT: Array<Array<LongArray>> = Array(STATE_SIZE) { lane ->
-        Array(N_ROUNDS) { round -> RC_SRC[lane * N_ROUNDS + round] }
-    }
-
     private val RC_SRC: Array<LongArray> = arrayOf(
         longArrayOf(0x0000000000000000UL.toLong(), 0x0000000000000000UL.toLong()),
         longArrayOf(0x0000000000000001UL.toLong(), 0x0000000000000000UL.toLong()),
@@ -289,6 +284,11 @@ object Poseidon2bConstants {
         longArrayOf(0x7573da4a5f7710edUL.toLong(), 0x3d5bd35c94646a24UL.toLong()),
         longArrayOf(0x7573da4a5f7710edUL.toLong(), 0x3d5bd35c94646a24UL.toLong()),
     )
+
+    /** Round constants RC[lane][round] (4 x 66). */
+    val RC_FLAT: Array<Array<LongArray>> = Array(STATE_SIZE) { lane ->
+        Array(N_ROUNDS) { round -> RC_SRC[lane * N_ROUNDS + round] }
+    }
 
     /** MDS_FULL_FLAT (4x4). */
     val MDS_FULL_FLAT: Array<Array<LongArray>> = arrayOf(

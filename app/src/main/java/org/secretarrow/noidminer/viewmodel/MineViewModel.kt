@@ -33,7 +33,9 @@ class MineViewModel : ViewModel() {
             while (true) {
                 appContext?.let { ctx ->
                     val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
-                    _thermal.value = Guards.thermalLabel(pm.currentThermalStatus)
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        _thermal.value = Guards.thermalLabel(pm.currentThermalStatus)
+                    }
                 }
                 delay(2000)
             }

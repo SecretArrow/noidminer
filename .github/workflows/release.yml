@@ -45,11 +45,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Rust toolchain
+      - name: Rust toolchain (default stable)
         run: |
           rustup toolchain install stable --profile minimal 2>/dev/null || true
           rustup default stable
-          rustup target add ${{ matrix.rust_target }}
       - name: Cache Rust (per-target)
         uses: actions/cache@v4
         with:
@@ -59,8 +58,10 @@ jobs:
             ~/.cargo/bin
             ~/.rustup
             native-pow/target
-          key: rust-${{ runner.os }}-${{ matrix.rust_target }}-${{ hashFiles('native-pow/Cargo.toml') }}
-          restore-keys: rust-${{ runner.os }}-${{ matrix.rust_target }}-
+          key: rust-${{ runner.os }}-v2-${{ matrix.rust_target }}-${{ hashFiles('native-pow/Cargo.toml') }}
+          restore-keys: rust-${{ runner.os }}-v2-${{ matrix.rust_target }}-
+      - name: Add Rust Android target (${{ matrix.rust_target }})
+        run: rustup target add ${{ matrix.rust_target }}
       - name: Ensure NDK 26.3
         run: |
           if [ ! -d "$ANDROID_HOME/ndk/26.3.11579264" ]; then

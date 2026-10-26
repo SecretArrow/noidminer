@@ -28,7 +28,11 @@ import org.secretarrow.noidminer.ui.screen.SettingsScreen
 import org.secretarrow.noidminer.ui.screen.WalletScreen
 
 /** Bottom tabs — plain enum, no sealed-class indirection. */
-enum class Tab(val route: String, val label: String, val icon: ImageVector) {
+enum class Tab(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+) {
     Mine("mine", "Mine", Icons.Filled.Bolt),
     Pools("pools", "Pools", Icons.Filled.Scanner),
     Wallet("wallet", "Wallet", Icons.Filled.Savings),

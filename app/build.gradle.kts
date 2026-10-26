@@ -21,9 +21,13 @@ android {
         vectorDrawables.useSupportLibrary = true
 
         ndk {
-            // arm64-v8a covers virtually all modern Android hardware.
-            // Other ABIs fall back to the pure-Kotlin Poseidon2b engine.
-            abiFilters += listOf("arm64-v8a")
+            // arm64-v8a covers virtually all modern Android hardware. The
+            // E2E workflow overrides this to x86_64 for the emulator:
+            //   ./gradlew ... -Pnoid.abis=x86_64
+            val abis = providers.gradleProperty("noid.abis").orNull
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?: listOf("arm64-v8a")
+            abiFilters += abis
         }
 
         externalNativeBuild {

@@ -38,7 +38,8 @@ class NativeEngine : HashEngine {
         try {
             NativePow.checkTargetNative(hash, targetLeHex)
         } catch (t: Throwable) {
-            software.le256Lt(hash, Hex.decode(targetLeHex) ?: return false)
+            val target = Hex.decode(targetLeHex) ?: return false
+            SoftwareEngine.software.le256Lt(hash, target)
         }
 
     override fun validateAddress(address: String): Boolean =

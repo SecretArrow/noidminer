@@ -1,5 +1,7 @@
 # NoidMiner
 
+[![CI](https://github.com/SecretArrow/noidminer/actions/workflows/ci.yml/badge.svg)](https://github.com/SecretArrow/noidminer/actions/workflows/ci.yml) [![E2E](https://github.com/SecretArrow/noidminer/actions/workflows/e2e.yml/badge.svg)](https://github.com/SecretArrow/noidminer/actions/workflows/e2e.yml) [![Release](https://github.com/SecretArrow/noidminer/actions/workflows/release.yml/badge.svg)](https://github.com/SecretArrow/noidminer/actions/workflows/release.yml)
+
 **Miner Parano1d (NOID) — Poseidon2b — untuk Android.** Porting penuh dari miner PC
 (CUDA) ke hardware Android: **CPU (ARM PMULL) + GPU (OpenCL)**, mining **background**
 dengan foreground service, UI/UX Material 3 yang didesain ulang total, dan

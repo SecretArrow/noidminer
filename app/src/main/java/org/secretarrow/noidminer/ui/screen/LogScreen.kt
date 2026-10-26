@@ -54,15 +54,18 @@ fun LogScreen(modifier: Modifier = Modifier, viewModel: LogViewModel = viewModel
                 )
             }
         } else {
+            // PERF (jetpack-compose-performance skill): remember the
+            // reversed list so a new log line does not allocate a new view
+            // list on every recomposition. NOTE: remember must live in the
+            // @Composable Column context — the LazyListScope builder below
+            // is NOT composable, so it cannot host remember() directly.
+            val reversed = remember(lines) { lines.asReversed() }
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // PERF (jetpack-compose-performance skill): remember the
-                // reversed list so a new log line does not allocate a new
-                // view list on every recomposition, and provide stable
-                // keys so LazyColumn diffs only the newly inserted item.
-                val reversed = remember(lines) { lines.asReversed() }
+                // Stable keys: LazyColumn diffs only the newly inserted
+                // item when a log line streams in.
                 items(reversed, key = { it.seq }) { line ->
                     Card(
                         colors = CardDefaults.cardColors(

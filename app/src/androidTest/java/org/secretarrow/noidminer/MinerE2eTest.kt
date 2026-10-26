@@ -60,6 +60,11 @@ class MinerE2eTest {
                     mode = MineMode.POOL,
                     poolUrl = "stratum+tcp://127.0.0.1:${server.port}",
                     poolUser = "o1e2e.worker01",
+                    // Neutralise guards so emulator battery/thermal quirks
+                    // can never pause the mining run mid-test.
+                    pauseAtBatteryPct = 0,
+                    onlyWhenCharging = false,
+                    respectBatterySaver = false,
                 )
             }
         }

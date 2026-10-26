@@ -9,6 +9,18 @@
 //! Poseidon2b over the 128-bit session lane → digest below share_target →
 //! submit [job_id, nonce128, work_domain_id] → pool result = true.
 //!
+//! PROOF-RUN v2 (learned from the first live attempt):
+//!  1. InnovLab sends mining.pause "canonical-tip-unverified" and may never
+//!     send mining.resume — workers now ignore a pause after 20s so the
+//!     budget is never burned sleeping.
+//!  2. Pools drop long-lived TLS sessions ("peer closed without
+//!     close_notify") — the miner now RECONNECTS with backoff and keeps
+//!     mining until the deadline. Hashes/accepts accumulate across sessions.
+//!  3. A single 4-core runner (~372 kH/s) statistically cannot hit a
+//!     ~2^32-hash share target inside a 12-minute budget — the CI workflow
+//!     now runs a MATRIX of independent sessions in parallel (each session
+//!     gets its own lane/namespace from the pool, so ranges never collide).
+//!
 //! Built only under the `pool-proof` feature (never part of the Android
 //! build): `cargo build --release --features pool-proof --bin pool_proof`.
 //!
@@ -17,7 +29,7 @@
 #![forbid(unsafe_code)]
 
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,6 +39,10 @@ use noid_poseidon2b::native::domain::TAG_POWHDR;
 
 const NONCE_FIELD_INDEX: usize = 10;
 const DIGEST_BATCH: usize = 512;
+/// A pool pause older than this is ignored — InnovLab's
+/// "canonical-tip-unverified" pause can persist forever without a
+/// mining.resume, which burned 630s of the first proof budget.
+const PAUSE_CAP_MS: i64 = 20_000;
 
 // ---------------------------------------------------------------- JSON utils
 
@@ -153,14 +169,86 @@ fn run() -> anyhow::Result<()> {
     let address = args[3].clone();
     let max_seconds: u64 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(3600);
 
-    eprintln!("pool_proof: {host}:{port} address={address}");
+    eprintln!("pool_proof: {host}:{port} address={address} budget={max_seconds}s");
 
+    let deadline = Instant::now() + Duration::from_secs(max_seconds);
+    let accepted_total = Arc::new(AtomicBool::new(false));
+    let hashes_total = Arc::new(AtomicU64::new(0));
+    let session_no = AtomicU64::new(0);
+    let t0 = Instant::now();
+    let mut last_error: Option<String> = None;
+
+    // v2: reconnect loop — pools drop long-lived sessions; a dropped
+    // connection must NOT end the proof. Hashes accumulate across sessions.
+    while Instant::now() < deadline && !accepted_total.load(Ordering::SeqCst) {
+        let n = session_no.fetch_add(1, Ordering::SeqCst) + 1;
+        let remaining = max_seconds.saturating_sub(t0.elapsed().as_secs());
+        eprintln!("--- session {n} (remaining budget {remaining}s) ---");
+        match run_session(
+            &host,
+            port,
+            &address,
+            deadline,
+            Arc::clone(&hashes_total),
+            Arc::clone(&accepted_total),
+        ) {
+            Ok(SessionOutcome::Accepted) => break,
+            Ok(SessionOutcome::Deadline) => break,
+            Ok(SessionOutcome::Disconnected(err)) => {
+                eprintln!("session {n} disconnected: {err} — reconnecting in 5s");
+                last_error = Some(err);
+                std::thread::sleep(Duration::from_secs(5));
+            }
+            Err(e) => {
+                // Fatal protocol conditions (authorize rejected etc.).
+                return Err(e);
+            }
+        }
+    }
+
+    if accepted_total.load(Ordering::SeqCst) {
+        eprintln!(
+            "PROOF OK: the pool accepted a REAL share for {address} (hashes={})",
+            hashes_total.load(Ordering::Relaxed)
+        );
+        println!("PROOF OK");
+        Ok(())
+    } else if Instant::now() >= deadline {
+        anyhow::bail!(
+            "deadline reached without an accepted share — hashes={}",
+            hashes_total.load(Ordering::Relaxed)
+        )
+    } else {
+        anyhow::bail!(
+            "no accepted share — hashes={} last_error={:?}",
+            hashes_total.load(Ordering::Relaxed),
+            last_error
+        )
+    }
+}
+
+enum SessionOutcome {
+    Accepted,
+    Deadline,
+    Disconnected(String),
+}
+
+/// One full stratum session: connect → subscribe → authorize → mine.
+/// Workers run until [deadline], [accepted] flips, or the connection dies.
+fn run_session(
+    host: &str,
+    port: u16,
+    address: &str,
+    deadline: Instant,
+    hashes_total: Arc<AtomicU64>,
+    accepted: Arc<AtomicBool>,
+) -> anyhow::Result<SessionOutcome> {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
-    let server = rustls::pki_types::ServerName::try_from(host.clone())
+    let server = rustls::pki_types::ServerName::try_from(host.to_string())
         .map_err(|e| anyhow::anyhow!("bad server name: {e}"))?;
     let conn = rustls::ClientConnection::new(Arc::new(config), server)?;
     let tcp = std::net::TcpStream::connect((host, port))?;
@@ -172,46 +260,50 @@ fn run() -> anyhow::Result<()> {
     let next_id = AtomicU64::new(10);
     let mut authorize_id: Option<u64> = None;
     let mut subscribed = false;
-    let started = Instant::now();
 
     // Send mining.subscribe immediately — pools only talk to subscribers.
     let sub_id = next_id.fetch_add(1, Ordering::SeqCst);
     tls.send_line(&format!(
-        "{{\"id\":{sub_id},\"method\":\"mining.subscribe\",\"params\":[\"NoidMiner/1.3.1\"]}}"
+        "{{\"id\":{sub_id},\"method\":\"mining.subscribe\",\"params\":[\"NoidMiner/1.3.4\"]}}"
     ))?;
     eprintln!("subscribe sent (id={sub_id})");
 
     let current: Arc<Mutex<Option<Job>>> = Arc::new(Mutex::new(None));
-    let stop = Arc::new(AtomicBool::new(false));
-    let accepted_flag = Arc::new(AtomicBool::new(false));
-    let hashes_total = Arc::new(AtomicU64::new(0));
-    let pool_paused = Arc::new(AtomicBool::new(false));
+    let session_stop = Arc::new(AtomicBool::new(false));
+    let pool_paused_since_ms = Arc::new(AtomicI64::new(0));
     let (submit_tx, submit_rx) = std::sync::mpsc::channel::<(String, String, String)>();
 
-    // Persistent mining workers — one thread per core, alive for the whole
-    // run. Each worker watches the job slot and switches hashers when the
-    // job id changes (no scope teardown races).
+    // One thread per core, alive for this session only.
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2)
         .min(8);
     for tid in 0..threads {
         let jobs = Arc::clone(&current);
-        let stop = Arc::clone(&stop);
+        let stop = Arc::clone(&session_stop);
         let hashes = Arc::clone(&hashes_total);
-        let paused = Arc::clone(&pool_paused);
+        let paused_since = Arc::clone(&pool_paused_since_ms);
+        let accepted = Arc::clone(&accepted);
         let tx = submit_tx.clone();
-        std::thread::spawn(move || miner_worker(tid, threads, jobs, stop, hashes, tx, paused));
+        std::thread::spawn(move || {
+            miner_worker(tid, jobs, stop, hashes, tx, paused_since, accepted)
+        });
     }
 
-    let deadline = Instant::now() + Duration::from_secs(max_seconds);
+    let started = Instant::now();
     let mut buf = String::new();
     let mut last_report = Instant::now();
+    let mut session_hashes_base = hashes_total.load(Ordering::Relaxed);
     let mut read_errors = 0u32;
-    let mut silent_windows = 0u64;
-    let mut last_report_total = 0u64;
 
-    while Instant::now() < deadline && !accepted_flag.load(Ordering::SeqCst) {
+    let outcome = loop {
+        if accepted.load(Ordering::SeqCst) {
+            break SessionOutcome::Accepted;
+        }
+        if Instant::now() >= deadline {
+            break SessionOutcome::Deadline;
+        }
+
         buf.clear();
         let got = match tls.read_line(&mut buf) {
             Ok(true) => {
@@ -219,22 +311,13 @@ fn run() -> anyhow::Result<()> {
                 true
             }
             Ok(false) => {
-                // Silent window — the pool accepted us but says nothing.
-                silent_windows += 1;
-                if silent_windows % 4 == 0 {
-                    eprintln!(
-                        "still silent ({}) after {}s — pool may be filtering this IP",
-                        silent_windows,
-                        started.elapsed().as_secs(),
-                    );
-                }
                 read_errors = 0;
                 false
             }
             Err(e) => {
                 read_errors += 1;
                 if read_errors >= 3 {
-                    return Err(e.context("stratum connection lost"));
+                    break SessionOutcome::Disconnected(format!("{e:#}"));
                 }
                 eprintln!("read error: {e}");
                 false
@@ -248,10 +331,16 @@ fn run() -> anyhow::Result<()> {
                     handle_notify(&line, &current);
                 } else if line.contains("\"method\":\"mining.pause\"") {
                     eprintln!("pool paused: {}", json_str(&line, "reason").unwrap_or("?"));
-                    pool_paused.store(true, Ordering::SeqCst);
+                    pool_paused_since_ms.store(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64,
+                        Ordering::SeqCst,
+                    );
                 } else if line.contains("\"method\":\"mining.resume\"") {
                     eprintln!("pool resumed");
-                    pool_paused.store(false, Ordering::SeqCst);
+                    pool_paused_since_ms.store(0, Ordering::SeqCst);
                 } else if !subscribed && line.contains("session_namespace") {
                     let ns = json_str(&line, "session_namespace").unwrap_or("");
                     eprintln!("subscribed: session_namespace={ns}");
@@ -267,18 +356,20 @@ fn run() -> anyhow::Result<()> {
                     let ok = json_bool_true(&line, "result");
                     eprintln!("authorize result: {ok}");
                     if !ok {
-                        anyhow::bail!("pool rejected payout address {address}");
+                        session_stop.store(true, Ordering::SeqCst);
+                        return Err(anyhow::anyhow!(
+                            "pool rejected payout address {address}"
+                        ));
                     }
                     authorize_id = None;
                 } else if line.contains("mining.submit")
-                    || (authorize_id.is_none()
-                        && subscribed
-                        && line.contains("\"result\""))
+                    || (authorize_id.is_none() && subscribed && line.contains("\"result\""))
                 {
                     let ok = line.contains("\"result\":true");
                     eprintln!("submit response: {}", &line[..line.len().min(200)]);
                     if ok {
-                        accepted_flag.store(true, Ordering::SeqCst);
+                        accepted.store(true, Ordering::SeqCst);
+                        break SessionOutcome::Accepted;
                     }
                 } else {
                     eprintln!("pool: {}", &line[..line.len().min(140)]);
@@ -290,40 +381,31 @@ fn run() -> anyhow::Result<()> {
         while let Ok((job_id, nonce_hex, domain)) = submit_rx.try_recv() {
             let id = next_id.fetch_add(1, Ordering::SeqCst);
             eprintln!("submitting share nonce={nonce_hex}");
-            tls.send_line(&format!(
+            if let Err(e) = tls.send_line(&format!(
                 "{{\"id\":{id},\"method\":\"mining.submit\",\"params\":[\"{job_id}\",\"{nonce_hex}\",\"{domain}\"]}}"
-            ))?;
+            )) {
+                eprintln!("submit send failed: {e:#}");
+                break SessionOutcome::Disconnected(format!("submit send: {e:#}"));
+            }
         }
 
         if last_report.elapsed() > Duration::from_secs(30) {
             let total = hashes_total.load(Ordering::Relaxed);
             let dt = last_report.elapsed().as_secs_f64();
-            let rate = (total - last_report_total) as f64 / dt.max(0.001);
+            let rate = (total - session_hashes_base) as f64 / dt.max(0.001);
+            session_hashes_base = total;
             last_report = Instant::now();
-            last_report_total = total;
             eprintln!(
-                "progress: hashes={total} rate={:.0} H/s accepted={}",
+                "progress: hashes={total} rate={:.0} H/s elapsed={}s accepted={}",
                 rate,
-                accepted_flag.load(Ordering::SeqCst) as u64,
+                started.elapsed().as_secs(),
+                accepted.load(Ordering::SeqCst) as u64,
             );
         }
-    }
+    };
 
-    stop.store(true, Ordering::SeqCst);
-
-    if accepted_flag.load(Ordering::SeqCst) {
-        eprintln!(
-            "PROOF OK: the pool accepted a REAL share for {address} (hashes={})",
-            hashes_total.load(Ordering::Relaxed),
-        );
-        println!("PROOF OK");
-        Ok(())
-    } else {
-        anyhow::bail!(
-            "no accepted share within {max_seconds}s — hashes={}",
-            hashes_total.load(Ordering::Relaxed)
-        );
-    }
+    session_stop.store(true, Ordering::SeqCst);
+    Ok(outcome)
 }
 
 fn handle_notify(line: &str, current: &Arc<Mutex<Option<Job>>>) {
@@ -335,7 +417,10 @@ fn handle_notify(line: &str, current: &Arc<Mutex<Option<Job>>>) {
         return;
     };
     if fields.len() != 512 {
-        eprintln!("notify pow_fields len {} (expected 512) — skipping", fields.len());
+        eprintln!(
+            "notify pow_fields len {} (expected 512) — skipping",
+            fields.len()
+        );
         return;
     }
     let job = Job {
@@ -376,16 +461,17 @@ fn worker_counter_start(tid: usize) -> u64 {
     (nanos & 0x00FF_FFFF_FFFF_FFF0).wrapping_add((tid as u64) << 40)
 }
 
-/// One persistent miner thread. Watches the job slot; rebuilds its hasher
-/// when the job id changes; never exits until [stop].
+/// One persistent miner thread for a single session. Watches the job slot;
+/// rebuilds its hasher when the job id changes; exits on session stop or a
+/// globally-accepted share.
 fn miner_worker(
     tid: usize,
-    _threads: usize,
     jobs: Arc<Mutex<Option<Job>>>,
     stop: Arc<AtomicBool>,
     hashes_total: Arc<AtomicU64>,
     submit_tx: std::sync::mpsc::Sender<(String, String, String)>,
-    pool_paused: Arc<AtomicBool>,
+    pool_paused_since_ms: Arc<AtomicI64>,
+    accepted: Arc<AtomicBool>,
 ) {
     let mut hasher: Option<FixedFieldNonceBatch> = None;
     let mut current_id = String::new();
@@ -395,14 +481,35 @@ fn miner_worker(
     let mut work_domain = String::new();
     let mut counter = worker_counter_start(tid);
     let mut digests = vec![[0u8; 32]; DIGEST_BATCH];
+    let mut pause_ignored_logged = false;
 
     loop {
-        if stop.load(Ordering::SeqCst) {
+        if stop.load(Ordering::SeqCst) || accepted.load(Ordering::SeqCst) {
             return;
         }
-        if pool_paused.load(Ordering::SeqCst) {
-            std::thread::sleep(Duration::from_millis(500));
-            continue;
+        // Honor the pool pause, but only while it is FRESH. A pause older
+        // than PAUSE_CAP_MS without a matching mining.resume is treated as
+        // pool-side noise (canonical-tip-unverified oscillation) and mining
+        // resumes — a budget burned sleeping can never find a share.
+        let paused_ms = pool_paused_since_ms.load(Ordering::SeqCst);
+        if paused_ms > 0 {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            if now_ms - paused_ms < PAUSE_CAP_MS {
+                std::thread::sleep(Duration::from_millis(500));
+                continue;
+            }
+            if !pause_ignored_logged {
+                pause_ignored_logged = true;
+                if tid == 0 {
+                    eprintln!(
+                        "pause older than {}s — mining anyway (pool never resumed)",
+                        PAUSE_CAP_MS / 1000
+                    );
+                }
+            }
         }
         // Job slot -> (re)build on change.
         let slot = jobs.lock().unwrap().clone();
@@ -439,8 +546,12 @@ fn miner_worker(
                 work_domain = job.work_domain_hex.clone();
                 current_id = job.id;
                 counter = worker_counter_start(tid);
+                pause_ignored_logged = false;
                 if tid == 0 {
-                    eprintln!("worker 0 switched to job {job_id} (prefix={:016x})", lane_hi as u64);
+                    eprintln!(
+                        "worker 0 switched to job {job_id} (prefix={:016x})",
+                        lane_hi as u64
+                    );
                 }
             }
         } else {

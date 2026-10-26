@@ -1,14 +1,22 @@
 name: Real pool proof
 
 # Mines a REAL accepted share on the live NOID pools with the payout
-# address, using the actual Rust PoW core (AVX2 on the CI runner). This is
-# the end-to-end production proof for the whole mining stack:
-# subscribe → authorize(o1…) → notify(object) → 128-bit session lane →
-# share_target hit → submit [job_id, nonce128, work_domain_id] → accepted.
+# address, using the actual Rust PoW core (AVX2 on the CI runner).
 #
-# Tries several pools in order — some pools silently drop datacenter IPs
-# (GitHub Actions runners), so the first probe is diagnostics, then the
-# Rust miner attempts each pool in turn.
+# PROOF-RUN v2 — what the first live attempt taught us:
+#   * pools DO authorize the payout address and DO stream jobs;
+#   * a single 4-core runner (~372 kH/s) statistically cannot hit a
+#     ~2^32-hash share target inside a 12-minute budget (316 MH found 0);
+#   * InnovLab pauses ("canonical-tip-unverified") and may never resume;
+#   * pools drop long-lived TLS sessions (~15 min) — reconnect is required.
+#
+# So this workflow now runs a MATRIX of independent stratum sessions
+# (different pools / worker names). Each session gets its own lane
+# namespace from the pool, so nonce ranges never collide. The run
+# succeeds the moment ANY session's share is accepted ("result":true).
+#
+# Public repo => Actions minutes are free; matrix default is 4 x 5h.
+
 on:
   workflow_dispatch:
     inputs:
@@ -16,9 +24,9 @@ on:
         description: "Payout o1 address"
         default: "o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn"
         required: false
-      per_pool_seconds:
-        description: "Mining budget per pool (seconds)"
-        default: "720"
+      budget_minutes:
+        description: "Mining budget per session (minutes)"
+        default: "300"
         required: false
 
 concurrency:
@@ -30,9 +38,26 @@ permissions:
 
 jobs:
   proof:
-    name: Mine a real share on the live pool
+    name: Session ${{ matrix.id }} — ${{ matrix.pool }}
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    continue-on-error: true
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: 0
+            pool: "stratum-eu.rplant.xyz 17185"
+            worker: ""
+          - id: 1
+            pool: "stratum-eu.rplant.xyz 17185"
+            worker: ".m1"
+          - id: 2
+            pool: "stratum-asia.rplant.xyz 17185"
+            worker: ".m2"
+          - id: 3
+            pool: "eu.innovlab.cc 19601"
+            worker: ".m3"
     steps:
       - uses: actions/checkout@v4
       - name: Rust toolchain
@@ -50,68 +75,68 @@ jobs:
             native-pow/target
           key: rust-${{ runner.os }}-v3-poolproof-${{ hashFiles('native-pow/Cargo.toml') }}
           restore-keys: rust-${{ runner.os }}-v3-poolproof-
-      - name: Build pool_proof (release, AVX2)
+      - name: Build pool_proof (release)
         run: cargo build --release --manifest-path native-pow/Cargo.toml --features pool-proof --bin pool_proof
-      - name: Pre-probe pools (diagnostics — do pools answer this runner IP at all?)
-        run: |
-          python3 - <<'EOF'
-          import socket, ssl, json, time
-          POOLS = [
-              ("eu.innovlab.cc", 19601, True),
-              ("stratum-eu.rplant.xyz", 17185, True),
-              ("stratum-asia.rplant.xyz", 17185, True),
-              ("eu1.alphapool.tech", 19610, False),
-          ]
-          for host, port, tls in POOLS:
-              label = f"{host}:{port}"
-              try:
-                  s = socket.create_connection((host, port), timeout=12)
-                  if tls:
-                      ctx = ssl.create_default_context()
-                      ctx.check_hostname = False
-                      ctx.verify_mode = ssl.CERT_NONE
-                      s = ctx.wrap_socket(s, server_hostname=host)
-                  s.settimeout(15)
-                  f = s.makefile("rwb")
-                  f.write((json.dumps({"id":1,"method":"mining.subscribe",
-                                       "params":["NoidMiner/1.3.1"]})+"\n").encode())
-                  f.flush()
-                  t0 = time.time()
-                  raw = None
-                  try:
-                      raw = f.readline()
-                  except Exception as e:
-                      print(f"{label}: NO REPLY in {time.time()-t0:.0f}s ({type(e).__name__})")
-                  if raw:
-                      print(f"{label}: REPLY in {time.time()-t0:.1f}s -> {raw.decode()[:110].strip()}")
-                  s.close()
-              except Exception as e:
-                  print(f"{label}: CONNECT FAILED {type(e).__name__}: {e}")
-          EOF
-      - name: Mine a real share (multi-pool fallback, first success wins)
+      - name: Mine a real share (auto-reconnect until budget/accept)
         env:
           ADDR: ${{ github.event.inputs.address || 'o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn' }}
-          BUDGET: ${{ github.event.inputs.per_pool_seconds || '720' }}
+          BUDGET: ${{ (github.event.inputs.budget_minutes || '300') }}m
+          WORKER: ${{ matrix.worker }}
+          POOL: ${{ matrix.pool }}
         run: |
           set -o pipefail
           rm -f proof.log
-          for POOL in "eu.innovlab.cc 19601" "stratum-eu.rplant.xyz 17185" "stratum-asia.rplant.xyz 17185" "eu1.alphapool.tech 19610"; do
-            set -- $POOL
-            HOST="$1"; PORT="$2"
-            echo "::group::Mining attempt on $HOST:$PORT (budget ${BUDGET}s)"
-            if ./native-pow/target/release/pool_proof "$HOST" "$PORT" "$ADDR" "$BUDGET" 2>&1 | tee -a proof.log; then
-              echo "::endgroup::"
-              echo "PROOF SUCCEEDED on $HOST:$PORT"
-              exit 0
-            fi
-            echo "::endgroup::"
-          done
-          echo "All pools exhausted without an accepted share."
-          exit 1
+          HOST=$(echo "$POOL" | cut -d' ' -f1)
+          PORT=$(echo "$POOL" | cut -d' ' -f2)
+          SECONDS_BUDGET=$(( ${BUDGET%m} * 60 ))
+          USER_ADDR="${ADDR}${WORKER}"
+          echo "session ${{ matrix.id }} -> $HOST:$PORT as $USER_ADDR for ${SECONDS_BUDGET}s"
+          ./native-pow/target/release/pool_proof "$HOST" "$PORT" "$USER_ADDR" "$SECONDS_BUDGET" 2>&1 | tee proof.log
+      - name: Evaluate outcome
+        id: outcome
+        if: always()
+        run: |
+          if grep -q "PROOF OK" proof.log; then
+            echo "accepted=true" >> "$GITHUB_OUTPUT"
+            echo "The pool ACCEPTED a real share for session ${{ matrix.id }}."
+          else
+            echo "accepted=false" >> "$GITHUB_OUTPUT"
+            tail -40 proof.log || true
+          fi
       - name: Upload proof log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pool-proof-log
+          name: proof-log-${{ matrix.id }}
           path: proof.log
           retention-days: 30
+      - name: Accepted-share marker
+        if: steps.outcome.outputs.accepted == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-ok-${{ matrix.id }}
+          path: proof.log
+          retention-days: 90
+
+  summary:
+    name: Proof verdict
+    needs: proof
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download accepted-share markers (if any)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: proof-ok-*
+          merge-multiple: true
+          path: markers
+      - name: Verdict
+        run: |
+          N=$(ls markers 2>/dev/null | wc -l)
+          if [ "$N" -gt 0 ]; then
+            echo "PROOF OK — $N session(s) had a share accepted by the live pool."
+            grep -h "PROOF OK" markers/* || true
+          else
+            echo "No session produced an accepted share within the budget."
+            exit 1
+          fi

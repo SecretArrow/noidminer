@@ -29,7 +29,6 @@ class HealthCheckWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
-
     override suspend fun doWork(): Result {
         val core = ServiceLocator.minerCore()
         val state = core.state.value
@@ -80,7 +79,8 @@ class HealthCheckWorker(
         val mgr = context.getSystemService(Context.ACTIVITY_SERVICE)
             as android.app.ActivityManager
         @Suppress("DEPRECATION")
-        return mgr.getRunningServices(Int.MAX_VALUE)
+        return mgr
+            .getRunningServices(Int.MAX_VALUE)
             .any { it.service.className == MinerService::class.java.name }
     }
 
@@ -89,15 +89,15 @@ class HealthCheckWorker(
 
         /** Schedule the periodic worker — idempotent (KEEP policy). */
         fun schedule(context: Context) {
-            val constraints = Constraints.Builder()
+            val constraints = Constraints
+                .Builder()
                 .setRequiresBatteryNotLow(false) // cronjob juga jalan saat baterai low
                 .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                 .build()
             val req = PeriodicWorkRequestBuilder<HealthCheckWorker>(
                 15,
                 TimeUnit.MINUTES,
-            )
-                .setConstraints(constraints)
+            ).setConstraints(constraints)
                 .addTag("noid_cron")
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(

@@ -16,7 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -44,7 +43,6 @@ import org.secretarrow.noidminer.ui.components.PillTone
 import org.secretarrow.noidminer.ui.components.RadialGauge
 import org.secretarrow.noidminer.ui.components.StatCard
 import org.secretarrow.noidminer.ui.components.StatusPill
-import org.secretarrow.noidminer.ui.theme.GradientDanger
 import org.secretarrow.noidminer.ui.theme.GradientHero
 import org.secretarrow.noidminer.ui.theme.GradientIdle
 import org.secretarrow.noidminer.ui.theme.GradientMining

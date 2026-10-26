@@ -15,7 +15,6 @@ import org.secretarrow.noidminer.di.ServiceLocator
  * independen dan selalu jalan.
  */
 object CronScheduler {
-
     /** Schedule semua cronjob NoidMiner — idempoten. */
     fun scheduleAll(context: Context) {
         ServiceLocator.emitServiceLog("info", "Scheduling cronjobs (health/hashlog/guard)")

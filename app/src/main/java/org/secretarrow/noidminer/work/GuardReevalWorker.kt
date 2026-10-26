@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Guard re-evaluation cronjob — setiap 15 menit, cek thermal + battery +
-            * battery-saver. Kalau guard menyala dan miner paused → cek apakah
+ * battery-saver. Kalau guard menyala dan miner paused → cek apakah
  * kondisi sudah aman. Kalau ya → resume mining.
  *
  * Ini backup untuk kasus di mana MinerService loop tertidur (Doze) atau
@@ -24,7 +24,6 @@ class GuardReevalWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
-
     override suspend fun doWork(): Result {
         val core = ServiceLocator.minerCore()
         val state = core.state.value
@@ -64,14 +63,14 @@ class GuardReevalWorker(
         const val UNIQUE_NAME = "noid_guard_reeval"
 
         fun schedule(context: Context) {
-            val constraints = Constraints.Builder()
+            val constraints = Constraints
+                .Builder()
                 .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                 .build()
             val req = PeriodicWorkRequestBuilder<GuardReevalWorker>(
                 15,
                 TimeUnit.MINUTES,
-            )
-                .setConstraints(constraints)
+            ).setConstraints(constraints)
                 .addTag("noid_cron")
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(

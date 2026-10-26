@@ -9,11 +9,11 @@ import androidx.compose.ui.graphics.Color
 // ============================================================================
 
 // --- Dark base (signature) ---
-val MidnightBase = Color(0xFF070912)        // near-black with blue tint
-val MidnightSurface = Color(0xFF0E1320)     // card background
+val MidnightBase = Color(0xFF070912) // near-black with blue tint
+val MidnightSurface = Color(0xFF0E1320) // card background
 val MidnightSurfaceHigh = Color(0xFF161D2E) // elevated card / pressed
-val MidnightOutline = Color(0xFF25304A)     // subtle dividers
-val MidnightGlass = Color(0xCC141A2E)       // 80% alpha for glass cards
+val MidnightOutline = Color(0xFF25304A) // subtle dividers
+val MidnightGlass = Color(0xCC141A2E) // 80% alpha for glass cards
 
 // --- Light base ---
 val DayBase = Color(0xFFF5F7FC)
@@ -24,13 +24,13 @@ val DayTextPrimary = Color(0xFF10141F)
 val DayTextSecondary = Color(0xFF5A6478)
 
 // --- Aurora accents (signature gradient stops) ---
-val AuroraViolet = Color(0xFF8B5CF6)        // primary
-val AuroraVioletDim = Color(0xFF5B3FAE)     // primary pressed / dark
-val AuroraCyan = Color(0xFF22D3EE)          // secondary
-val AuroraMint = Color(0xFF34D399)          // tertiary (success / mining)
-val AuroraAmber = Color(0xFFFBBF24)         // warning (throttle)
-val AuroraRose = Color(0xFFFB7185)          // error / stop
-val AuroraPink = Color(0xFFF472B6)          // accent pink for special highlights
+val AuroraViolet = Color(0xFF8B5CF6) // primary
+val AuroraVioletDim = Color(0xFF5B3FAE) // primary pressed / dark
+val AuroraCyan = Color(0xFF22D3EE) // secondary
+val AuroraMint = Color(0xFF34D399) // tertiary (success / mining)
+val AuroraAmber = Color(0xFFFBBF24) // warning (throttle)
+val AuroraRose = Color(0xFFFB7185) // error / stop
+val AuroraPink = Color(0xFFF472B6) // accent pink for special highlights
 
 // --- Text colors (dark) ---
 val TextPrimary = Color(0xFFEFF3FB)

@@ -2,7 +2,6 @@ package org.secretarrow.noidminer.work
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import kotlinx.coroutines.runBlocking
@@ -27,7 +26,6 @@ import org.secretarrow.noidminer.di.ServiceLocator
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class HealthCheckWorkerTest {
-
     private lateinit var context: Context
 
     @Before
@@ -49,6 +47,10 @@ class HealthCheckWorkerTest {
             inputData = workDataOf(),
         ).build()
         val result = worker.doWork()
-        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        assertEquals(
+            androidx.work.ListenableWorker.Result
+                .success(),
+            result
+        )
     }
 }

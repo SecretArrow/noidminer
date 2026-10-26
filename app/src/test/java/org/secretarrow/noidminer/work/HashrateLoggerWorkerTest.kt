@@ -21,7 +21,6 @@ import org.secretarrow.noidminer.di.ServiceLocator
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class HashrateLoggerWorkerTest {
-
     private lateinit var context: Context
 
     @Before
@@ -43,6 +42,10 @@ class HashrateLoggerWorkerTest {
             inputData = workDataOf(),
         ).build()
         val result = worker.doWork()
-        assertEquals(androidx.work.ListenableWorker.Result.success(), result)
+        assertEquals(
+            androidx.work.ListenableWorker.Result
+                .success(),
+            result
+        )
     }
 }

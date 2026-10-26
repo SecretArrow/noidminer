@@ -71,8 +71,7 @@ fun GlassCard(
                         bg.copy(alpha = 0.65f),
                     ),
                 ),
-            )
-            .border(
+            ).border(
                 BorderStroke(1.dp, borderColor.copy(alpha = 0.6f)),
                 RoundedCornerShape(cornerRadius),
             ),
@@ -119,8 +118,7 @@ fun GradientButton(
                     start = Offset(shift * -800f, 0f),
                     end = Offset(shift * 800f + 800f, 800f),
                 ),
-            )
-            .clickable(onClick = onClick),
+            ).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Row(

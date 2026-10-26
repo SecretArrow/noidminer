@@ -22,7 +22,6 @@ class HashrateLoggerWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
-
     override suspend fun doWork(): Result {
         val core = ServiceLocator.minerCore()
         val s = core.state.value
@@ -45,14 +44,14 @@ class HashrateLoggerWorker(
         const val UNIQUE_NAME = "noid_hashrate_logger"
 
         fun schedule(context: Context) {
-            val constraints = Constraints.Builder()
+            val constraints = Constraints
+                .Builder()
                 .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                 .build()
             val req = PeriodicWorkRequestBuilder<HashrateLoggerWorker>(
                 30,
                 TimeUnit.MINUTES,
-            )
-                .setConstraints(constraints)
+            ).setConstraints(constraints)
                 .addTag("noid_cron")
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(

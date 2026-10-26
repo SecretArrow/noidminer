@@ -63,7 +63,18 @@ jobs:
           disable-animations: true
           # x86_64 ABI so the APK is installable on the emulator; the app
           # then exercises its pure-Kotlin software engine fallback path.
-          script: ./gradlew :app:connectedDebugAndroidTest -Pnoid.abis=x86_64
+          script: |
+            TEST_EXIT=0
+            ./gradlew :app:connectedDebugAndroidTest -Pnoid.abis=x86_64 || TEST_EXIT=$?
+            adb logcat -d > e2e-logcat.txt || true
+            exit $TEST_EXIT
+      - name: Upload logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logcat
+          path: e2e-logcat.txt
+          retention-days: 7
       - name: Upload e2e reports
         if: always()
         uses: actions/upload-artifact@v4

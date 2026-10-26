@@ -46,7 +46,7 @@ fun HashrateChart(
     val history = remember { mutableStateListOf(0.0) }
     val smooth = remember { mutableDoubleStateOf(0.0) }
     val animated by animateFloatAsState(
-        targetValue = smooth.floatValue,
+        targetValue = smooth.doubleValue.toFloat(),
         animationSpec = tween(450, easing = LinearEasing),
         label = "hashrate",
     )

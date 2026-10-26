@@ -16,7 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cpu
+import androidx.compose.material.icons.filled.DeveloperBoard
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -337,7 +337,7 @@ private fun BackendPickerDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // CPU option — always available
                     BackendOption(
-                        icon = Icons.Filled.Cpu,
+                        icon = Icons.Filled.DeveloperBoard,
                         title = "CPU",
                         subtitle = "${probe.cpuCores} core · ${probe.cpuLabel}",
                         badge = null,

@@ -82,7 +82,7 @@ impl SharedTls {
     /// the caller's maintenance window. Ok(true) on a full line.
     fn read_line(&self, buf: &mut String) -> anyhow::Result<bool> {
         let mut guard = self.stream.lock().unwrap();
-        guard.sock.set_read_timeout(Some(Duration::from_secs(20)))?;
+        guard.sock.set_read_timeout(Some(Duration::from_secs(5)))?;
         let mut out: Vec<u8> = Vec::with_capacity(1024);
         let mut byte = [0u8; 1];
         loop {
@@ -188,14 +188,20 @@ fn run() -> anyhow::Result<()> {
     let pool_paused = Arc::new(AtomicBool::new(false));
     let (submit_tx, submit_rx) = std::sync::mpsc::channel::<(String, String, String)>();
 
-    // Persistent mining workers.
-    for _ in 0..1 {
+    // Persistent mining workers — one thread per core, alive for the whole
+    // run. Each worker watches the job slot and switches hashers when the
+    // job id changes (no scope teardown races).
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2)
+        .min(8);
+    for tid in 0..threads {
         let jobs = Arc::clone(&current);
         let stop = Arc::clone(&stop);
         let hashes = Arc::clone(&hashes_total);
         let paused = Arc::clone(&pool_paused);
         let tx = submit_tx.clone();
-        std::thread::spawn(move || mine_loop(jobs, stop, hashes, tx, paused));
+        std::thread::spawn(move || miner_worker(tid, threads, jobs, stop, hashes, tx, paused));
     }
 
     let deadline = Instant::now() + Duration::from_secs(max_seconds);
@@ -203,6 +209,7 @@ fn run() -> anyhow::Result<()> {
     let mut last_report = Instant::now();
     let mut read_errors = 0u32;
     let mut silent_windows = 0u64;
+    let mut last_report_total = 0u64;
 
     while Instant::now() < deadline && !accepted_flag.load(Ordering::SeqCst) {
         buf.clear();
@@ -212,13 +219,15 @@ fn run() -> anyhow::Result<()> {
                 true
             }
             Ok(false) => {
-                // 20s silent window — the pool accepted us but says nothing.
+                // Silent window — the pool accepted us but says nothing.
                 silent_windows += 1;
-                eprintln!(
-                    "still silent ({}) after {}s — pool may be filtering this IP",
-                    silent_windows,
-                    started.elapsed().as_secs(),
-                );
+                if silent_windows % 4 == 0 {
+                    eprintln!(
+                        "still silent ({}) after {}s — pool may be filtering this IP",
+                        silent_windows,
+                        started.elapsed().as_secs(),
+                    );
+                }
                 read_errors = 0;
                 false
             }
@@ -287,10 +296,14 @@ fn run() -> anyhow::Result<()> {
         }
 
         if last_report.elapsed() > Duration::from_secs(30) {
+            let total = hashes_total.load(Ordering::Relaxed);
+            let dt = last_report.elapsed().as_secs_f64();
+            let rate = (total - last_report_total) as f64 / dt.max(0.001);
             last_report = Instant::now();
+            last_report_total = total;
             eprintln!(
-                "progress: hashes={} accepted={}",
-                hashes_total.load(Ordering::Relaxed),
+                "progress: hashes={total} rate={:.0} H/s accepted={}",
+                rate,
                 accepted_flag.load(Ordering::SeqCst) as u64,
             );
         }
@@ -354,124 +367,103 @@ fn handle_notify(line: &str, current: &Arc<Mutex<Option<Job>>>) {
     *current.lock().unwrap() = Some(job);
 }
 
-/// Persistent worker: mines the newest job's lane space, restarts on change.
-fn mine_loop(
+/// Deterministic per-worker counter start (spread across the u64 space).
+fn worker_counter_start(tid: usize) -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos() as u64;
+    (nanos & 0x00FF_FFFF_FFFF_FFF0).wrapping_add((tid as u64) << 40)
+}
+
+/// One persistent miner thread. Watches the job slot; rebuilds its hasher
+/// when the job id changes; never exits until [stop].
+fn miner_worker(
+    tid: usize,
+    _threads: usize,
     jobs: Arc<Mutex<Option<Job>>>,
     stop: Arc<AtomicBool>,
     hashes_total: Arc<AtomicU64>,
     submit_tx: std::sync::mpsc::Sender<(String, String, String)>,
     pool_paused: Arc<AtomicBool>,
 ) {
+    let mut hasher: Option<FixedFieldNonceBatch> = None;
+    let mut current_id = String::new();
+    let mut target = [0xffu8; 32];
+    let mut lane_hi: u128 = 0;
+    let mut job_id = String::new();
+    let mut work_domain = String::new();
+    let mut counter = worker_counter_start(tid);
+    let mut digests = vec![[0u8; 32]; DIGEST_BATCH];
+
     loop {
         if stop.load(Ordering::SeqCst) {
             return;
         }
-        let Some(job) = jobs.lock().unwrap().clone() else {
-            std::thread::sleep(Duration::from_millis(200));
-            continue;
-        };
         if pool_paused.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(500));
             continue;
         }
-        mine_job(&job, &jobs, &stop, &hashes_total, &submit_tx, &pool_paused);
-    }
-}
-
-fn mine_job(
-    job: &Job,
-    jobs: &Arc<Mutex<Option<Job>>>,
-    stop: &Arc<AtomicBool>,
-    hashes_total: &Arc<AtomicU64>,
-    submit_tx: &std::sync::mpsc::Sender<(String, String, String)>,
-    pool_paused: &Arc<AtomicBool>,
-) {
-    let Ok(field_bytes) = hex::decode(&job.fields_hex) else {
-        return;
-    };
-    if field_bytes.len() != 256 {
-        return;
-    }
-    let Ok(target_bytes) = hex::decode(&job.target_le_hex) else {
-        return;
-    };
-    if target_bytes.len() != 32 {
-        return;
-    }
-    let mut target = [0u8; 32];
-    target.copy_from_slice(&target_bytes);
-
-    let lane_hi: u128 = hex::decode(&job.lane_hi_hex)
-        .ok()
-        .filter(|b| b.len() == 8)
-        .map(|b| u128::from(u64::from_le_bytes(b.try_into().unwrap())))
-        .unwrap_or(0);
-
-    let mut fields = [Block128::from(0u128); 16];
-    for (i, chunk) in field_bytes.chunks_exact(16).enumerate() {
-        fields[i] = Block128::from(u128::from_le_bytes(chunk.try_into().unwrap()));
-    }
-
-    let threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2)
-        .min(8);
-    eprintln!("mining job {} on {threads} threads", job.id);
-
-    let start_counter =
-        (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_nanos() as u64)
-            & 0x00FF_FFFF_FFFF_FFF0;
-
-    std::thread::scope(|scope| {
-        for tid in 0..threads {
-            let stop = Arc::clone(stop);
-            let hashes_total = Arc::clone(hashes_total);
-            let submit_tx = submit_tx.clone();
-            let pool_paused = Arc::clone(pool_paused);
-            let jobs = Arc::clone(jobs);
-            let job_id = job.id.clone();
-            let work_domain = job.work_domain_hex.clone();
-            scope.spawn(move || {
-                let mut hasher = FixedFieldNonceBatch::new(TAG_POWHDR, &fields, NONCE_FIELD_INDEX);
-                let mut digests = vec![[0u8; 32]; DIGEST_BATCH];
-                let mut counter =
-                    start_counter.wrapping_add((tid as u64) * 0x0400_0000_0000u64);
-                while !stop.load(Ordering::SeqCst) {
-                    if pool_paused.load(Ordering::SeqCst) {
-                        std::thread::sleep(Duration::from_millis(500));
-                        continue;
-                    }
-                    // A newer job arrived? Abandon this generation.
-                    {
-                        let slot = jobs.lock().unwrap();
-                        match slot.as_ref() {
-                            Some(cur) if cur.id != job_id => return,
-                            _ => {}
-                        }
-                    }
-                    let lane = lane_hi | u128::from(counter);
-                    hasher.hash_into(lane, &mut digests);
-                    for (i, digest) in digests.iter().enumerate() {
-                        if noid_pow::le256_lt(digest, &target) {
-                            let nonce_counter = counter.wrapping_add(i as u64);
-                            let nonce_hex = hex::encode(
-                                (lane_hi | u128::from(nonce_counter)).to_le_bytes(),
-                            );
-                            eprintln!(
-                                "share found counter={nonce_counter} hash={}…",
-                                hex::encode(&digest[..6]),
-                            );
-                            let _ =
-                                submit_tx.send((job_id.clone(), nonce_hex, work_domain.clone()));
-                        }
-                    }
-                    hashes_total.fetch_add(DIGEST_BATCH as u64, Ordering::Relaxed);
-                    counter = counter.wrapping_add(DIGEST_BATCH as u64);
+        // Job slot -> (re)build on change.
+        let slot = jobs.lock().unwrap().clone();
+        if let Some(job) = slot {
+            if job.id != current_id {
+                let Ok(field_bytes) = hex::decode(&job.fields_hex) else {
+                    std::thread::sleep(Duration::from_millis(300));
+                    continue;
+                };
+                if field_bytes.len() != 256 {
+                    std::thread::sleep(Duration::from_millis(300));
+                    continue;
                 }
-            });
+                let Ok(target_bytes) = hex::decode(&job.target_le_hex) else {
+                    std::thread::sleep(Duration::from_millis(300));
+                    continue;
+                };
+                if target_bytes.len() != 32 {
+                    std::thread::sleep(Duration::from_millis(300));
+                    continue;
+                }
+                let mut fields = [Block128::from(0u128); 16];
+                for (i, chunk) in field_bytes.chunks_exact(16).enumerate() {
+                    fields[i] = Block128::from(u128::from_le_bytes(chunk.try_into().unwrap()));
+                }
+                hasher = Some(FixedFieldNonceBatch::new(TAG_POWHDR, &fields, NONCE_FIELD_INDEX));
+                target.copy_from_slice(&target_bytes);
+                lane_hi = hex::decode(&job.lane_hi_hex)
+                    .ok()
+                    .filter(|b| b.len() == 8)
+                    .map(|b| u128::from(u64::from_le_bytes(b.try_into().unwrap())))
+                    .unwrap_or(0);
+                job_id = job.id.clone();
+                work_domain = job.work_domain_hex.clone();
+                current_id = job.id;
+                counter = worker_counter_start(tid);
+                if tid == 0 {
+                    eprintln!("worker 0 switched to job {job_id} (prefix={:016x})", lane_hi as u64);
+                }
+            }
+        } else {
+            std::thread::sleep(Duration::from_millis(200));
+            continue;
         }
-    });
+        let Some(h) = hasher.as_mut() else { continue };
+
+        let lane = lane_hi | u128::from(counter);
+        h.hash_into(lane, &mut digests);
+        for (i, digest) in digests.iter().enumerate() {
+            if noid_pow::le256_lt(digest, &target) {
+                let nonce_counter = counter.wrapping_add(i as u64);
+                let nonce_hex =
+                    hex::encode((lane_hi | u128::from(nonce_counter)).to_le_bytes());
+                eprintln!(
+                    "share found counter={nonce_counter} hash={}…",
+                    hex::encode(&digest[..6]),
+                );
+                let _ = submit_tx.send((job_id.clone(), nonce_hex, work_domain.clone()));
+            }
+        }
+        hashes_total.fetch_add(DIGEST_BATCH as u64, Ordering::Relaxed);
+        counter = counter.wrapping_add(DIGEST_BATCH as u64);
+    }
 }

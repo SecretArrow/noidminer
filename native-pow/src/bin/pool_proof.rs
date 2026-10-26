@@ -172,6 +172,7 @@ fn run() -> anyhow::Result<()> {
     let next_id = AtomicU64::new(10);
     let mut authorize_id: Option<u64> = None;
     let mut subscribed = false;
+    let started = Instant::now();
 
     let current: Arc<Mutex<Option<Job>>> = Arc::new(Mutex::new(None));
     let stop = Arc::new(AtomicBool::new(false));
@@ -194,13 +195,25 @@ fn run() -> anyhow::Result<()> {
     let mut buf = String::new();
     let mut last_report = Instant::now();
     let mut read_errors = 0u32;
+    let mut silent_windows = 0u64;
 
     while Instant::now() < deadline && !accepted_flag.load(Ordering::SeqCst) {
         buf.clear();
         let got = match tls.read_line(&mut buf) {
-            Ok(g) => {
+            Ok(true) => {
                 read_errors = 0;
-                g
+                true
+            }
+            Ok(false) => {
+                // 20s silent window — the pool accepted us but says nothing.
+                silent_windows += 1;
+                eprintln!(
+                    "still silent ({}) after {}s — pool may be filtering this IP",
+                    silent_windows,
+                    started.elapsed().as_secs(),
+                );
+                read_errors = 0;
+                false
             }
             Err(e) => {
                 read_errors += 1;

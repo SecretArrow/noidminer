@@ -1,28 +1,24 @@
 name: Real pool proof
 
-# Mines a REAL accepted share on the live InnovLab pool with the payout
+# Mines a REAL accepted share on the live NOID pools with the payout
 # address, using the actual Rust PoW core (AVX2 on the CI runner). This is
 # the end-to-end production proof for the whole mining stack:
 # subscribe → authorize(o1…) → notify(object) → 128-bit session lane →
 # share_target hit → submit [job_id, nonce128, work_domain_id] → accepted.
+#
+# Tries several pools in order — some pools silently drop datacenter IPs
+# (GitHub Actions runners), so the first probe is diagnostics, then the
+# Rust miner attempts each pool in turn.
 on:
   workflow_dispatch:
     inputs:
-      host:
-        description: "Pool host (default InnovLab EU)"
-        default: "eu.innovlab.cc"
-        required: false
-      port:
-        description: "Pool stratum port"
-        default: "19601"
-        required: false
       address:
         description: "Payout o1 address"
         default: "o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn"
         required: false
-      max_seconds:
-        description: "Mining budget in seconds"
-        default: "3000"
+      per_pool_seconds:
+        description: "Mining budget per pool (seconds)"
+        default: "720"
         required: false
 
 concurrency:
@@ -36,7 +32,7 @@ jobs:
   proof:
     name: Mine a real share on the live pool
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
       - name: Rust toolchain
@@ -56,14 +52,62 @@ jobs:
           restore-keys: rust-${{ runner.os }}-v3-poolproof-
       - name: Build pool_proof (release, AVX2)
         run: cargo build --release --manifest-path native-pow/Cargo.toml --features pool-proof --bin pool_proof
-      - name: Mine a real share with the payout address
-        timeout-minutes: 55
+      - name: Pre-probe pools (diagnostics — do pools answer this runner IP at all?)
         run: |
-          ./native-pow/target/release/pool_proof \
-            "${{ github.event.inputs.host || 'eu.innovlab.cc' }}" \
-            "${{ github.event.inputs.port || '19601' }}" \
-            "${{ github.event.inputs.address || 'o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn' }}" \
-            "${{ github.event.inputs.max_seconds || '3000' }}" 2>&1 | tee proof.log
+          python3 - <<'EOF'
+          import socket, ssl, json, time
+          POOLS = [
+              ("eu.innovlab.cc", 19601, True),
+              ("stratum-eu.rplant.xyz", 17185, True),
+              ("stratum-asia.rplant.xyz", 17185, True),
+              ("eu1.alphapool.tech", 19610, False),
+          ]
+          for host, port, tls in POOLS:
+              label = f"{host}:{port}"
+              try:
+                  s = socket.create_connection((host, port), timeout=12)
+                  if tls:
+                      ctx = ssl.create_default_context()
+                      ctx.check_hostname = False
+                      ctx.verify_mode = ssl.CERT_NONE
+                      s = ctx.wrap_socket(s, server_hostname=host)
+                  s.settimeout(15)
+                  f = s.makefile("rwb")
+                  f.write((json.dumps({"id":1,"method":"mining.subscribe",
+                                       "params":["NoidMiner/1.3.1"]})+"\n").encode())
+                  f.flush()
+                  t0 = time.time()
+                  raw = None
+                  try:
+                      raw = f.readline()
+                  except Exception as e:
+                      print(f"{label}: NO REPLY in {time.time()-t0:.0f}s ({type(e).__name__})")
+                  if raw:
+                      print(f"{label}: REPLY in {time.time()-t0:.1f}s -> {raw.decode()[:110].strip()}")
+                  s.close()
+              except Exception as e:
+                  print(f"{label}: CONNECT FAILED {type(e).__name__}: {e}")
+          EOF
+      - name: Mine a real share (multi-pool fallback, first success wins)
+        env:
+          ADDR: ${{ github.event.inputs.address || 'o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn' }}
+          BUDGET: ${{ github.event.inputs.per_pool_seconds || '720' }}
+        run: |
+          set -o pipefail
+          rm -f proof.log
+          for POOL in "eu.innovlab.cc 19601" "stratum-eu.rplant.xyz 17185" "stratum-asia.rplant.xyz 17185" "eu1.alphapool.tech 19610"; do
+            set -- $POOL
+            HOST="$1"; PORT="$2"
+            echo "::group::Mining attempt on $HOST:$PORT (budget ${BUDGET}s)"
+            if ./native-pow/target/release/pool_proof "$HOST" "$PORT" "$ADDR" "$BUDGET" 2>&1 | tee -a proof.log; then
+              echo "::endgroup::"
+              echo "PROOF SUCCEEDED on $HOST:$PORT"
+              exit 0
+            fi
+            echo "::endgroup::"
+          done
+          echo "All pools exhausted without an accepted share."
+          exit 1
       - name: Upload proof log
         if: always()
         uses: actions/upload-artifact@v4

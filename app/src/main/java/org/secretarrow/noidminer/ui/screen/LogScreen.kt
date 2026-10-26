@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -57,7 +58,12 @@ fun LogScreen(modifier: Modifier = Modifier, viewModel: LogViewModel = viewModel
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                items(lines.asReversed()) { line ->
+                // PERF (jetpack-compose-performance skill): remember the
+                // reversed list so a new log line does not allocate a new
+                // view list on every recomposition, and provide stable
+                // keys so LazyColumn diffs only the newly inserted item.
+                val reversed = remember(lines) { lines.asReversed() }
+                items(reversed, key = { it.seq }) { line ->
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,

@@ -97,7 +97,17 @@ data class LogLine(
     val ts: Long,
     val level: String,
     val message: String,
-)
+) {
+    // PERF (jetpack-compose-performance skill): stable unique identity so
+    // LazyColumn items(keys = seq) can diff streamed log lines instead of
+    // re-diffing the whole list on every line. Assigned at construction.
+    val seq: Long = LogLine.nextSeq()
+
+    companion object {
+        private val COUNTER = java.util.concurrent.atomic.AtomicLong(0)
+        fun nextSeq(): Long = COUNTER.incrementAndGet()
+    }
+}
 
 /**
  * Threaded mining core. N worker threads pull batches through the selected
@@ -195,9 +205,15 @@ class MinerCore(
         if (!running.getAndSet(false)) return
         paused.set(false)
         threads.forEach { it.interrupt() }
+        // ANR FIX (anr-audit-and-fix skill): close the job source BEFORE
+        // joining. A worker blocked in nextJob() on a plain Socket.read does
+        // not react to interrupt() — only closing the socket unblocks it.
+        // The old order (join then close) made stop() wait the full 1.5s
+        // budget per stuck worker, and stopMining() used to run this on the
+        // main thread.
+        jobSource?.close()
         threads.forEach { it.join(1500) }
         threads = emptyList()
-        jobSource?.close()
         jobSource = null
         currentJob = null
         _state.update { it.copy(running = false, paused = false, hashrateHps = 0.0) }

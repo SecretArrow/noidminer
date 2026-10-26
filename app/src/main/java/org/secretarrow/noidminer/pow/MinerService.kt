@@ -35,6 +35,14 @@ import org.secretarrow.noidminer.di.ServiceLocator
  */
 class MinerService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // ANR FIX (anr-audit-and-fix skill): core.stop() joins every worker
+    // thread with a 1.5s budget each. With 4-8 workers that is up to 12s of
+    // main-thread blocking when ACTION_STOP arrives — the notification
+    // action is an input path, so 5s+ here is a real ANR. The stop runs on
+    // this dedicated scope (NOT cancelled in onDestroy, so a stopSelf()
+    // racing onDestroy cannot cancel the join mid-flight).
+    private val stopScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var settingsRepo: MinerSettingsRepository
     private lateinit var core: MinerCore
     private lateinit var guardMonitor: GuardMonitor
@@ -61,7 +69,10 @@ class MinerService : Service() {
                 return START_STICKY
             }
             ACTION_STOP -> {
-                stopMining()
+                // ANR FIX: see stopScope. Tear down the foreground UI
+                // immediately on main, do the thread-joining teardown off-main.
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopScope.launch { stopMining() }
                 return START_NOT_STICKY
             }
             else -> Unit
@@ -227,7 +238,6 @@ class MinerService : Service() {
     private fun stopMining() {
         core.stop()
         releaseWakeLock()
-        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 

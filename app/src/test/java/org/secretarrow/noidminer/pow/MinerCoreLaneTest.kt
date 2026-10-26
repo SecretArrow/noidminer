@@ -2,7 +2,6 @@ package org.secretarrow.noidminer.pow
 
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -12,6 +11,11 @@ import org.junit.Test
  * Per-feature regression tests for the lane-based PoW core:
  * nonce-lane layout, software engine lane semantics, and MinerCore
  * start/pause/stop lifecycle with a scripted JobSource.
+ *
+ * The lifecycle tests use [FakeEngine] — a deterministic instant engine —
+ * because the real software Poseidon2b needs ~100ms/hash on a shared CI
+ * vCPU, which would make a 256-hash batch exceed the whole test window.
+ * Engine correctness is covered by the golden-vector suites.
  */
 class MinerCoreLaneTest {
     private val fields512 = (0 until 256).joinToString("") { "%02x".format(it % 256) }
@@ -82,7 +86,8 @@ class MinerCoreLaneTest {
     }
 
     @Test
-    fun `software engine batch lanes equal per-lane hashes`() {
+    fun `software engine batch of three lanes matches per-lane hashes`() {
+        // Small batch (3, not 256) — stays fast even on a slow CI vCPU.
         val engine = SoftwareEngine()
         val laneHi = 0x0807060504030201UL.toLong()
         val start = 9000L
@@ -95,6 +100,43 @@ class MinerCoreLaneTest {
     }
 
     // ------------------------------------------------------- MinerCore lifecycle
+
+    /**
+     * Deterministic instant engine: every digest is the little-endian lane
+     * bytes repeated twice, and every digest passes the target check.
+     */
+    private class FakeEngine : HashEngine {
+        override val name: String = "fake · instant"
+
+        override fun batchHashLanes(
+            powFieldsHex: String,
+            laneHi: Long,
+            laneLoStart: Long,
+            count: Int,
+        ): ByteArray? {
+            val out = ByteArray(count * 32)
+            for (i in 0 until count) {
+                var lo = laneLoStart + i
+                var hi = laneHi
+                val base = i * 32
+                for (b in 0 until 8) {
+                    out[base + b] = lo.toByte()
+                    lo = lo ushr 8
+                    out[base + 8 + b] = hi.toByte()
+                    hi = hi ushr 8
+                }
+                // Repeat the lane bytes so digests are 32 bytes of pattern.
+                for (b in 0 until 16) {
+                    out[base + 16 + b] = out[base + b]
+                }
+            }
+            return out
+        }
+
+        override fun checkTarget(hash: ByteArray, targetLeHex: String): Boolean = true
+
+        override fun validateAddress(address: String): Boolean = true
+    }
 
     private class ScriptedSource : JobSource {
         val submitted = AtomicInteger(0)
@@ -111,32 +153,35 @@ class MinerCoreLaneTest {
         override fun close() = Unit
     }
 
+    private fun coreWithFakeEngine(): MinerCore =
+        MinerCore { EngineSelector.Result(FakeEngine(), false, null, false) }
+
     @Test
     fun `miner core start stop lifecycle`() {
         val job = MiningJob(
             templateId = "life-1",
             powFieldsHex = fields512,
-            targetLeHex = "f".repeat(64), // all-FF target: every hash is a share
+            targetLeHex = "f".repeat(64), // FakeEngine accepts every hash
             height = 10,
             expiresAtMs = Long.MAX_VALUE,
             laneHiHex = "0102030405060708",
         )
         val source = ScriptedSource().apply { nextAnswer = job }
-        val core = MinerCore { EngineSelector.Result(SoftwareEngine(), false, null, false) }
+        val core = coreWithFakeEngine()
         core.start(source, 1)
         try {
-            val deadline = System.currentTimeMillis() + 30_000
+            val deadline = System.currentTimeMillis() + 15_000
             while (core.state.value.sharesAccepted == 0L && System.currentTimeMillis() < deadline) {
-                Thread.sleep(50)
+                Thread.sleep(20)
             }
-            assertTrue("no share accepted in 30s", core.state.value.sharesAccepted > 0)
+            assertTrue("no share accepted in 15s", core.state.value.sharesAccepted > 0)
             assertTrue(core.state.value.running)
-            assertEquals("CPU · software", core.state.value.backend)
+            assertEquals("fake · instant", core.state.value.backend)
             assertTrue(source.submitted.get() > 0)
         } finally {
             core.stop()
         }
-        assertFalse(core.running.get())
+        assertTrue(!core.running.get())
         assertEquals(false, core.state.value.running)
     }
 
@@ -150,19 +195,25 @@ class MinerCoreLaneTest {
             expiresAtMs = Long.MAX_VALUE,
         )
         val source = ScriptedSource().apply { nextAnswer = job }
-        val core = MinerCore { EngineSelector.Result(SoftwareEngine(), false, null, false) }
+        val core = coreWithFakeEngine()
         core.start(source, 1)
         try {
+            // Let the worker find at least one share, then pause.
+            val deadline = System.currentTimeMillis() + 15_000
+            while (core.state.value.sharesAccepted == 0L && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20)
+            }
+            assertTrue(core.state.value.sharesAccepted > 0)
             core.pause("thermal test")
-            Thread.sleep(300)
+            Thread.sleep(400)
             assertTrue(core.paused.get())
             assertEquals("thermal test", core.state.value.pausedReason)
             val sharesBefore = core.state.value.sharesAccepted + core.state.value.sharesRejected
-            Thread.sleep(300)
+            Thread.sleep(400)
             val sharesAfter = core.state.value.sharesAccepted + core.state.value.sharesRejected
             assertEquals("workers must not hash while paused", sharesBefore, sharesAfter)
             core.resume()
-            assertFalse(core.paused.get())
+            assertTrue(!core.paused.get())
         } finally {
             core.stop()
         }
@@ -180,17 +231,17 @@ class MinerCoreLaneTest {
         val fresh = expired.copy(templateId = "new", expiresAtMs = Long.MAX_VALUE)
         val source = ScriptedSource()
         source.nextAnswer = fresh
-        val core = MinerCore { EngineSelector.Result(SoftwareEngine(), false, null, false) }
+        val core = coreWithFakeEngine()
         core.currentJob = expired
         core.start(source, 1)
         try {
-            // Workers must drop the expired job and pick up the fresh one.
-            val deadline = System.currentTimeMillis() + 10_000
+            // start() clears currentJob; workers must mine the fresh job.
+            val deadline = System.currentTimeMillis() + 15_000
             while (core.state.value.sharesAccepted == 0L &&
                 core.state.value.sharesRejected == 0L &&
                 System.currentTimeMillis() < deadline
             ) {
-                Thread.sleep(50)
+                Thread.sleep(20)
             }
             assertTrue(
                 "core must mine the fresh job after expiry",

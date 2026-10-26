@@ -76,8 +76,12 @@ class PoolJobSourceTest {
                                         writer.println(notifyLine)
                                     }
                                     line.contains("mining.authorize") -> {
+                                        // Use a flexible regex — org.json JSONObject
+                                        // doesn't preserve insertion order on all
+                                        // JVMs, so "method" and "params" may be
+                                        // separated by "id" or other keys.
                                         authorizedUser.set(
-                                            Regex("\"mining.authorize\",\"params\":\\[\"([^\"]+)\"")
+                                            Regex("\"mining\\.authorize\".*?\"params\"\\s*:\\s*\\[\"([^\"]+)\"")
                                                 .find(line)
                                                 ?.groupValues
                                                 ?.get(1),

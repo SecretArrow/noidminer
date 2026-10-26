@@ -104,7 +104,9 @@ data class LogLine(
     val seq: Long = LogLine.nextSeq()
 
     companion object {
-        private val COUNTER = java.util.concurrent.atomic.AtomicLong(0)
+        private val COUNTER = java.util.concurrent.atomic
+            .AtomicLong(0)
+
         fun nextSeq(): Long = COUNTER.incrementAndGet()
     }
 }

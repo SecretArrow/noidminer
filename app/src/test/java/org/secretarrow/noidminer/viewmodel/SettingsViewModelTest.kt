@@ -77,8 +77,10 @@ class SettingsViewModelTest {
         vm.setKeepAwake(false)
         awaitTrue {
             val s = runBlocking { ServiceLocator.settingsRepository(context).snapshot() }
-            s.pauseAtBatteryPct == 25 && s.onlyWhenCharging &&
-                !s.respectBatterySaver && !s.keepCpuAwake
+            s.pauseAtBatteryPct == 25 &&
+                s.onlyWhenCharging &&
+                !s.respectBatterySaver &&
+                !s.keepCpuAwake
         }
     }
 

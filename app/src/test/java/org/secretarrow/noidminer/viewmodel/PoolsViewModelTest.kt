@@ -105,7 +105,8 @@ class PoolsViewModelTest {
     fun `probe surfaces the first pool line from a live local socket`() {
         val payload = "{\"id\":1,\"result\":[[\"mining.notify\",\"abc\"]],\"error\":null}\n"
         val server = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())
-        val accepted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val accepted = java.util.concurrent.atomic
+            .AtomicBoolean(false)
         val accepter = thread {
             runCatching {
                 server.soTimeout = 8000

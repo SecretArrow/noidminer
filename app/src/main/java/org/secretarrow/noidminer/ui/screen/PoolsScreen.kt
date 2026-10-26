@@ -35,6 +35,7 @@ import org.secretarrow.noidminer.viewmodel.PoolsViewModel
 fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsState()
     val probe by viewModel.probe.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var poolUrl by remember(settings.poolUrl) { mutableStateOf(settings.poolUrl) }
     var poolUser by remember(settings.poolUser) { mutableStateOf(settings.poolUser) }
     var worker by remember(settings.workerName) { mutableStateOf(settings.workerName) }
@@ -117,7 +118,7 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
                 enabled = true,
             ) { Text("Save") }
             androidx.compose.material3.OutlinedButton(
-                onClick = { viewModel.probe(androidx.compose.ui.platform.LocalContext.current) },
+                onClick = { viewModel.probe(context) },
             ) { Text("Probe") }
         }
 
@@ -148,10 +149,11 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
 
 @Composable
 private fun PoolPresetRow(viewModel: PoolsViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         PoolsViewModel.presets.forEach { preset ->
             Card(
-                onClick = { viewModel.applyPreset(androidx.compose.ui.platform.LocalContext.current, preset.url) },
+                onClick = { viewModel.applyPreset(context, preset.url) },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 shape = androidx.compose.foundation.shape
                     .RoundedCornerShape(14.dp),

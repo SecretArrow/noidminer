@@ -171,21 +171,24 @@ class MinerCore(
                     Thread.sleep(PAUSE_POLL_MS)
                     continue
                 }
-                val job = currentJob ?: source.nextJob()?.also {
-                    currentJob = it
-                    log("info", "job h=${it.height} id=${it.templateId.take(12)}")
-                    _state.value = _state.value.copy(currentHeight = it.height)
-                } ?: run {
+                val job = currentJob
+                val activeJob = job ?: source.nextJob()
+                if (activeJob == null) {
                     Thread.sleep(JOB_RETRY_MS)
                     continue
                 }
-                if (job.isExpired()) {
+                if (currentJob == null) {
+                    currentJob = activeJob
+                    log("info", "job h=${activeJob.height} id=${activeJob.templateId.take(12)}")
+                    _state.value = _state.value.copy(currentHeight = activeJob.height)
+                }
+                if (activeJob.isExpired()) {
                     currentJob = null
                     continue
                 }
                 val engine = engineResult?.engine ?: return
                 val count = BATCH_SIZE
-                val digests = engine.batchHash(job.powFieldsHex, nonce, count)
+                val digests = engine.batchHash(activeJob.powFieldsHex, nonce, count)
                 if (digests == null) {
                     // Backend hiccup — small backoff, keep the worker alive.
                     Thread.sleep(BACKOFF_MS)
@@ -193,12 +196,12 @@ class MinerCore(
                 }
                 for (i in 0 until count) {
                     val digest = digests.copyOfRange(i * 32, (i + 1) * 32)
-                    if (engine.checkTarget(digest, job.targetLeHex)) {
+                    if (engine.checkTarget(digest, activeJob.targetLeHex)) {
                         val hashHex = Hex.encode(digest)
                         val nonceLeHex = nonceHex(nonce + i)
                         log("info", "share found nonce=${nonce + i} hash=${hashHex.take(16)}…")
                         val ok = try {
-                            source.submit(job, nonceLeHex, hashHex)
+                            source.submit(activeJob, nonceLeHex, hashHex)
                         } catch (t: Throwable) {
                             log("error", "submit failed: ${t.message}")
                             false

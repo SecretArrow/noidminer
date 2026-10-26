@@ -16,21 +16,26 @@ done
 
 echo "==> Ensuring cargo-ndk"
 if ! command -v cargo-ndk > /dev/null 2>&1; then
-    # Fast path: prebuilt release binary (no compile step).
     ARCH=$(uname -m)
     case "$ARCH" in
-        x86_64) CNDK_ASSET="x86_64-unknown-linux-gnu" ;;
-        aarch64 | arm64) CNDK_ASSET="aarch64-unknown-linux-gnu" ;;
+        x86_64) CNDK_ASSET="x86_64" ;;
+        aarch64 | arm64) CNDK_ASSET="aarch64" ;;
         *) echo "unsupported host arch: $ARCH"; exit 1 ;;
     esac
     CNDK_VER="3.5.0"
-    curl -sL "https://github.com/bbqsrc/cargo-ndk/releases/download/${CNDK_VER}/cargo-ndk-linux-${CNDK_ASSET}.tar.gz" \
-        -o /tmp/cargo-ndk.tar.gz
-    tar -xzf /tmp/cargo-ndk.tar.gz -C /tmp
     mkdir -p ~/.cargo/bin
-    mv /tmp/cargo-ndk ~/.cargo/bin/cargo-ndk
-    chmod +x ~/.cargo/bin/cargo-ndk
-    export PATH="$HOME/.cargo/bin:$PATH"
+    if curl -sL "https://github.com/bbqsrc/cargo-ndk/releases/download/${CNDK_VER}/cargo-ndk-linux-${CNDK_ASSET}.tar.gz" \
+            -o /tmp/cargo-ndk.tar.gz \
+        && tar -xzf /tmp/cargo-ndk.tar.gz -C /tmp 2> /dev/null \
+        && [ -f /tmp/cargo-ndk ]; then
+        mv /tmp/cargo-ndk ~/.cargo/bin/cargo-ndk
+        chmod +x ~/.cargo/bin/cargo-ndk
+        export PATH="$HOME/.cargo/bin:$PATH"
+    else
+        echo "prebuilt download failed — falling back to cargo install (slower)"
+        cargo install cargo-ndk --locked
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
 fi
 
 echo "==> Locating NDK"

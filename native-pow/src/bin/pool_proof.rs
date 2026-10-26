@@ -174,6 +174,13 @@ fn run() -> anyhow::Result<()> {
     let mut subscribed = false;
     let started = Instant::now();
 
+    // Send mining.subscribe immediately — pools only talk to subscribers.
+    let sub_id = next_id.fetch_add(1, Ordering::SeqCst);
+    tls.send_line(&format!(
+        "{{\"id\":{sub_id},\"method\":\"mining.subscribe\",\"params\":[\"NoidMiner/1.3.1\"]}}"
+    ))?;
+    eprintln!("subscribe sent (id={sub_id})");
+
     let current: Arc<Mutex<Option<Job>>> = Arc::new(Mutex::new(None));
     let stop = Arc::new(AtomicBool::new(false));
     let accepted_flag = Arc::new(AtomicBool::new(false));

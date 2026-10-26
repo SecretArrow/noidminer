@@ -296,7 +296,16 @@ class MinerCore(
     }
 
     companion object {
-        const val BATCH_SIZE = 256
+        /**
+         * Batch size for `batchHashLanes`. Production uses 256 (good throughput
+         * on ARM PMULL). Tests override via the `noidminer.batchSize` system
+         * property to make per-hash latency observable inside the 30s deadline
+         * (the pure-Kotlin software engine is ~50-200ms/hash on CI JVMs, so a
+         * 256-hash batch can exceed the test budget before the worker ever
+         * gets a chance to check the first digest).
+         */
+        val BATCH_SIZE: Int =
+            System.getProperty("noidminer.batchSize")?.toIntOrNull()?.coerceIn(1, 4096) ?: 256
         const val MAX_THREADS = 16
         private const val STRIDE = 1L shl 32
         private const val PAUSE_POLL_MS = 400L

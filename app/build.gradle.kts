@@ -141,6 +141,12 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
+        // Smaller batch size so unit tests on the pure-Kotlin software engine
+        // can observe the first share inside the test's 30s deadline. Production
+        // keeps the default BATCH_SIZE=256 (set in MinerCore companion).
+        unitTests.all {
+            it.systemProperty("noidminer.batchSize", "4")
+        }
     }
 }
 

@@ -66,6 +66,11 @@ class PoolJobSourceTest {
                                                 """"protocol":"parano1d-stratum-v1",""" +
                                                 """"session_namespace":"0102030405060708"}}""",
                                         )
+                                        // Send the notify immediately after subscribe so the
+                                        // client has a job to mine. The previous test only
+                                        // defined notifyLine as a property but never sent it —
+                                        // nextJob() always timed out.
+                                        writer.println(notifyLine)
                                     }
                                     line.contains("mining.authorize") -> {
                                         authorizedUser.set(

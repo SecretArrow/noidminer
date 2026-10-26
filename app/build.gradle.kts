@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -44,7 +46,7 @@ android {
                 ?: providers.gradleProperty("NOID_KEY_PASSWORD").orNull)?.takeIf { it.isNotBlank() }
             if (ksB64 != null && ksPass != null && alias != null && keyPass != null) {
                 val tmp = File.createTempFile("noidminer", ".jks").apply {
-                    writeBytes(java.util.Base64.getDecoder().decode(ksB64))
+                    writeBytes(Base64.getDecoder().decode(ksB64))
                     deleteOnExit()
                 }
                 storeFile = tmp

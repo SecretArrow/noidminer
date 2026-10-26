@@ -17,7 +17,6 @@ import org.secretarrow.noidminer.pow.MinerCore
  */
 object ServiceLocator {
     private val lock = Any()
-    private var appContext: Context? = null
 
     @Volatile
     private var settingsRepo: MinerSettingsRepository? = null

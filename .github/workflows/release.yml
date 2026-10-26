@@ -61,7 +61,7 @@ jobs:
             echo "NOID_KEYSTORE_FILE=$RUNNER_TEMP/noidminer.jks" >> "$GITHUB_ENV"
           else
             echo "NOID_KEYSTORE_FILE=" >> "$GITHUB_ENV"
-            echo "::warning::No signing secret set — APK will be debug-signed."
+            echo "::warning::No signing secret set — APK would be UNSIGNED; the hard gate below will fail the job."
           fi
       - name: Assemble release
         env:

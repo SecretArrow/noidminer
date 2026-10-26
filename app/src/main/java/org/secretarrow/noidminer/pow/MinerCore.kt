@@ -11,15 +11,59 @@ import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/** One mining template — identical shape across Pool (Stratum) / Solo RPC. */
+/**
+ * One mining template — identical shape across Pool (Stratum) / Solo RPC.
+ *
+ * @param laneHiHex optional 8-byte session prefix (hex). When present the
+ *   128-bit nonce lane is `(laneHi << 64) | counter` and submissions carry
+ *   the full 16-byte lane; when null the lane is a free 128-bit value
+ *   (solo/RPC mining, high half stays random-per-start).
+ * @param workDomainIdHex optional 64-hex value echoed in mining.submit.
+ */
 data class MiningJob(
     val templateId: String,
     val powFieldsHex: String,
     val targetLeHex: String,
     val height: Long,
     val expiresAtMs: Long,
+    val laneHiHex: String? = null,
+    val workDomainIdHex: String? = null,
 ) {
     fun isExpired(nowMs: Long = System.currentTimeMillis()): Boolean = nowMs >= expiresAtMs
+
+    /**
+     * Builds the 32-hex-char nonce (16 bytes little-endian) for a counter:
+     * counter LE bytes first, then the raw session prefix bytes — exactly
+     * the layout the parano1d pools validate ("work_domain_id"/namespace
+     * check reads bytes 8..16).
+     */
+    fun nonceHex(counter: Long): String {
+        val bytes = ByteArray(16)
+        var v = counter
+        for (i in 0 until 8) {
+            bytes[i] = (v and 0xFF).toByte()
+            v = v ushr 8
+        }
+        val hi = laneHiHex
+        if (hi != null) {
+            val hiBytes = Hex.decode(hi)
+            if (hiBytes != null && hiBytes.size == 8) {
+                hiBytes.copyInto(bytes, 8)
+            }
+        }
+        return Hex.encode(bytes)
+    }
+
+    /** laneHi as a little-endian u64 (the engine's high word of the lane). */
+    fun laneHiValue(): Long {
+        val hi = laneHiHex ?: return 0L
+        val bytes = Hex.decode(hi) ?: return 0L
+        var v = 0UL
+        for (i in 0 until minOf(8, bytes.size)) {
+            v = v or ((bytes[i].toULong() and 0xFFUL) shl (8 * i))
+        }
+        return v.toLong()
+    }
 }
 
 /** Provides mining templates and accepts share submissions. */
@@ -58,6 +102,10 @@ data class LogLine(
  * Threaded mining core. N worker threads pull batches through the selected
  * [HashEngine]; pause/resume is cooperative via an AtomicBoolean so the
  * guards (thermal/battery) can throttle instantly.
+ *
+ * Nonce management: workers scan the 64-bit counter space; the 128-bit lane
+ * is `(job.laneHi << 64) | counter` for pool jobs (session prefix) and a
+ * random free lane for solo jobs. Worker ranges never overlap (stride 2^32).
  *
  * All engine exceptions are contained — a crashing worker logs and exits
  * without taking down the service; other workers keep mining.
@@ -188,7 +236,8 @@ class MinerCore(
                 }
                 val engine = engineResult?.engine ?: return
                 val count = BATCH_SIZE
-                val digests = engine.batchHash(activeJob.powFieldsHex, nonce, count)
+                val laneHi = activeJob.laneHiValue()
+                val digests = engine.batchHashLanes(activeJob.powFieldsHex, laneHi, nonce, count)
                 if (digests == null) {
                     // Backend hiccup — small backoff, keep the worker alive.
                     Thread.sleep(BACKOFF_MS)
@@ -198,7 +247,7 @@ class MinerCore(
                     val digest = digests.copyOfRange(i * 32, (i + 1) * 32)
                     if (engine.checkTarget(digest, activeJob.targetLeHex)) {
                         val hashHex = Hex.encode(digest)
-                        val nonceLeHex = nonceHex(nonce + i)
+                        val nonceLeHex = activeJob.nonceHex(nonce + i)
                         log("info", "share found nonce=${nonce + i} hash=${hashHex.take(16)}…")
                         val ok = try {
                             source.submit(activeJob, nonceLeHex, hashHex)
@@ -240,20 +289,6 @@ class MinerCore(
             hashrateHps = hashes.get().toDouble() / elapsedSec,
             hashesTried = hashes.get(),
         )
-    }
-
-    private fun nonceHex(nonce: Long): String {
-        val bytes = ByteArray(16)
-        var v = nonce
-        for (i in 0 until 8) {
-            bytes[i] = (v and 0xFF).toByte()
-            v = v ushr 8
-        }
-        return Hex.encode(bytes)
-    }
-
-    private fun log(level: String, message: String) {
-        _log.tryEmit(LogLine(System.currentTimeMillis(), level, message))
     }
 
     companion object {

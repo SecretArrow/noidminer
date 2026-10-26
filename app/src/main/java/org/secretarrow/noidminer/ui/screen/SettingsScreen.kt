@@ -15,6 +15,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -32,6 +33,8 @@ import org.secretarrow.noidminer.viewmodel.SettingsViewModel
 fun SettingsScreen(modifier: Modifier = Modifier, viewModel: SettingsViewModel = viewModel()) {
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
+
+    LaunchedEffect(Unit) { viewModel.attach(context) }
 
     Column(
         modifier = modifier

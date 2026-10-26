@@ -23,6 +23,9 @@ extern "C" {
 int32_t noidminer_hash_pow(const char* pow_fields_hex, unsigned long long nonce, uint8_t* out);
 int32_t noidminer_batch_hash(const char* pow_fields_hex, unsigned long long nonce_start,
                              unsigned int nonce_count, uint8_t* out, size_t out_len);
+int32_t noidminer_batch_hash_lanes(const char* pow_fields_hex, unsigned long long lane_hi,
+                                   unsigned long long lane_lo_start, unsigned int nonce_count,
+                                   uint8_t* out, size_t out_len);
 int32_t noidminer_check_target(const uint8_t* hash, size_t hash_len, const char* target_le_hex);
 int32_t noidminer_le256_lt(const uint8_t* a, const uint8_t* b);
 int32_t noidminer_validate_address(const char* addr);
@@ -62,47 +65,29 @@ constexpr jint MAX_BATCH = 4096;
 // ----------------------------------------------------------------- CPU path
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_org_secretarrow_noidminer_pow_NativePow_hashPowNative(
-        JNIEnv* env, jclass, jstring jPowFields, jlong jNonce) {
-    if (!env) return nullptr;
-    try {
-#if NOID_HAS_NATIVE_POW
-        auto fields = jstr_to_std(env, jPowFields);
-        uint8_t out[32] = {0};
-        if (noidminer_hash_pow(fields.c_str(), static_cast<unsigned long long>(jNonce), out) != 0) {
-            return nullptr;
-        }
-        return bytes_to_jbyteArray(env, std::vector<uint8_t>(out, out + 32));
-#else
-        return nullptr;
-#endif
-    } catch (const std::exception& e) {
-        LOGE("hashPowNative: %s", e.what());
-        return nullptr;
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-extern "C" JNIEXPORT jbyteArray JNICALL
-Java_org_secretarrow_noidminer_pow_NativePow_batchHashNative(
-        JNIEnv* env, jclass, jstring jPowFields, jlong jNonceStart, jint jCount) {
+Java_org_secretarrow_noidminer_pow_NativePow_batchHashLaneNative(
+        JNIEnv* env, jclass, jstring jPowFields, jlong jLaneHi, jlong jLaneLoStart, jint jCount) {
     if (!env) return nullptr;
     try {
 #if NOID_HAS_NATIVE_POW
         auto fields = jstr_to_std(env, jPowFields);
         if (jCount <= 0 || jCount > MAX_BATCH) return nullptr;
         std::vector<uint8_t> out(static_cast<size_t>(jCount) * 32u, 0);
-        if (noidminer_batch_hash(fields.c_str(), static_cast<unsigned long long>(jNonceStart),
-                                 static_cast<unsigned int>(jCount), out.data(), out.size()) != 0) {
+        if (noidminer_batch_hash_lanes(fields.c_str(),
+                                       static_cast<unsigned long long>(jLaneHi),
+                                       static_cast<unsigned long long>(jLaneLoStart),
+                                       static_cast<unsigned int>(jCount), out.data(),
+                                       out.size()) != 0) {
             return nullptr;
         }
         return bytes_to_jbyteArray(env, out);
 #else
+        (void)jLaneHi;
+        (void)jLaneLoStart;
         return nullptr;
 #endif
     } catch (const std::exception& e) {
-        LOGE("batchHashNative: %s", e.what());
+        LOGE("batchHashLaneNative: %s", e.what());
         return nullptr;
     } catch (...) {
         return nullptr;
@@ -203,20 +188,21 @@ Java_org_secretarrow_noidminer_pow_NativePow_openclDeviceNameNative(JNIEnv* env,
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_org_secretarrow_noidminer_pow_NativePow_openclBatchHashNative(
-        JNIEnv* env, jclass, jstring jPowFields, jlong jNonceStart, jint jCount) {
+Java_org_secretarrow_noidminer_pow_NativePow_openclBatchHashLaneNative(
+        JNIEnv* env, jclass, jstring jPowFields, jlong jLaneHi, jlong jLaneLoStart, jint jCount) {
     if (!env) return nullptr;
     try {
         if (jCount <= 0 || jCount > MAX_BATCH) return nullptr;
         auto fields = jstr_to_std(env, jPowFields);
         std::vector<uint8_t> out(static_cast<size_t>(jCount) * 32u, 0);
-        if (!noid::opencl_batch_hash(fields, static_cast<uint64_t>(jNonceStart),
+        if (!noid::opencl_batch_hash(fields, static_cast<uint64_t>(jLaneHi),
+                                     static_cast<uint64_t>(jLaneLoStart),
                                      static_cast<uint32_t>(jCount), out)) {
             return nullptr;
         }
         return bytes_to_jbyteArray(env, out);
     } catch (const std::exception& e) {
-        LOGE("openclBatchHashNative: %s", e.what());
+        LOGE("openclBatchHashLaneNative: %s", e.what());
         return nullptr;
     } catch (...) {
         return nullptr;

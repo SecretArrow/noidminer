@@ -57,21 +57,30 @@ pub fn le256_lt(a: &[u8; 32], b: &[u8; 32]) -> bool {
     false
 }
 
-/// Hash one nonce (low 64 bits of the 128-bit nonce lane).
-pub fn hash_pow(pow_fields_hex: &str, nonce: u64) -> PowResult<[u8; 32]> {
-    let mut fields = decode_pow_fields_hex(pow_fields_hex)?;
-    fields[POW_NONCE_FIELD_INDEX] = Block128::from(nonce as u128);
+/// Hash one 128-bit lane. Pool stratum passes
+/// `lane_hi = session_prefix (LE u64)`, `lane_lo = counter`; solo mining
+/// keeps a free lane (`lane_hi = 0`).
+pub fn hash_pow_lane(pow_fields_hex: &str, lane_hi: u64, lane_lo: u64) -> PowResult<[u8; 32]> {
+    let fields = decode_pow_fields_hex(pow_fields_hex)?;
+    let lane = (u128::from(lane_hi) << 64) | u128::from(lane_lo);
     let mut hasher = FixedFieldNonceBatch::new(TAG_POWHDR, &fields, POW_NONCE_FIELD_INDEX);
     let mut out = [[0u8; 32]; 1];
-    hasher.hash_into(nonce as u128, &mut out[..1]);
+    hasher.hash_into(lane, &mut out[..1]);
     Ok(out[0])
 }
 
-/// Batch-hash `count` consecutive nonces starting at `nonce_start`.
-/// Output buffer receives `count * 32` bytes.
-pub fn batch_hash(
+/// Legacy entry — free 128-bit lane with a zero high word.
+pub fn hash_pow(pow_fields_hex: &str, nonce: u64) -> PowResult<[u8; 32]> {
+    hash_pow_lane(pow_fields_hex, 0, nonce)
+}
+
+/// Batch-hash [count] consecutive 128-bit lanes
+/// `(lane_hi shl 64) | (lane_lo_start + i)`. Output buffer receives
+/// `count * 32` bytes.
+pub fn batch_hash_lanes(
     pow_fields_hex: &str,
-    nonce_start: u64,
+    lane_hi: u64,
+    lane_lo_start: u64,
     count: u32,
     out: &mut [u8],
 ) -> PowResult<()> {
@@ -82,11 +91,22 @@ pub fn batch_hash(
     let fields = decode_pow_fields_hex(pow_fields_hex)?;
     let mut hasher = FixedFieldNonceBatch::new(TAG_POWHDR, &fields, POW_NONCE_FIELD_INDEX);
     let mut digests = vec![[0u8; POW_DIGEST_LEN]; count as usize];
-    hasher.hash_into(nonce_start as u128, &mut digests);
+    let start = (u128::from(lane_hi) << 64) | u128::from(lane_lo_start);
+    hasher.hash_into(start, &mut digests);
     for (i, digest) in digests.iter().enumerate() {
         out[i * POW_DIGEST_LEN..(i + 1) * POW_DIGEST_LEN].copy_from_slice(digest);
     }
     Ok(())
+}
+
+/// Legacy batch entry — free 128-bit lane with a zero high word.
+pub fn batch_hash(
+    pow_fields_hex: &str,
+    nonce_start: u64,
+    count: u32,
+    out: &mut [u8],
+) -> PowResult<()> {
+    batch_hash_lanes(pow_fields_hex, 0, nonce_start, count, out)
 }
 
 /// True when `hash < target` (256-bit LE comparison).
@@ -155,13 +175,14 @@ mod bech32m_o1 {
         Some((hrp, data))
     }
 
-    /// Validate: lowercase `o1…` address with a correct Bech32m checksum.
+    /// Validate a Parano1d payout address: bech32m checksum, HRP `o`
+    /// (upstream `ADDRESS_HRP`), 32-byte payload (58 data chars).
     #[must_use]
     pub fn validate(address: &str) -> bool {
         let Some((hrp, mut data)) = decode_to_5bit(address) else {
             return false;
         };
-        if hrp != "o1" || data.len() < 7 {
+        if hrp != "o" || data.len() != 58 {
             return false;
         }
         let checksum = data.split_off(data.len() - 6);
@@ -242,5 +263,57 @@ mod tests {
     fn bech32m_rejects_wrong_hrp() {
         // Constructed with the standard bech32m algorithm for HRP "xx".
         assert!(!validate_bech32m_o1("xx1q"), "too short must fail");
+    }
+
+    /// Real payout address (HRP "o" — the "1" is the bech32 separator).
+    /// Captured live; the pool authorized this exact string.
+    #[test]
+    fn bech32m_accepts_real_pool_address() {
+        let addr = "o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn";
+        assert_eq!(addr.len(), 60);
+        assert!(validate_bech32m_o1(addr), "real o1… address must validate");
+    }
+
+    #[test]
+    fn bech32m_rejects_single_char_corruption() {
+        let addr = "o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn";
+        let corrupted = format!("o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmpr{}", {
+            let last = addr.chars().last().unwrap();
+            if last == 'n' { 'q' } else { 'n' }
+        });
+        assert_ne!(corrupted, addr);
+        assert!(!validate_bech32m_o1(&corrupted));
+    }
+
+    /// lane-based hashing with lane_hi = 0 must equal the legacy 64-bit path.
+    #[test]
+    fn lane_hash_matches_legacy_when_lane_hi_zero() {
+        let fields = zero_pow_fields_hex();
+        let legacy = hash_pow(&fields, 12345).expect("legacy hash");
+        let lane = hash_pow_lane(&fields, 0, 12345).expect("lane hash");
+        assert_eq!(legacy, lane);
+    }
+
+    /// A non-zero lane_hi must change the digest (session prefix matters).
+    #[test]
+    fn lane_hash_changes_with_lane_hi() {
+        let fields = zero_pow_fields_hex();
+        let zero_hi = hash_pow_lane(&fields, 0, 7).expect("hash");
+        let pool_hi = hash_pow_lane(&fields, 0x0002_0000_008e_18ed, 7).expect("hash");
+        assert_ne!(zero_hi, pool_hi);
+    }
+
+    /// Batch over lanes must equal per-lane hashing, including a pool prefix.
+    #[test]
+    fn batch_hash_lanes_matches_single() {
+        let fields = zero_pow_fields_hex();
+        let lane_hi = 0x0002_0000_008e_18edu64;
+        let start = 1_000_000u64;
+        let mut out = vec![0u8; POW_DIGEST_LEN * 4];
+        batch_hash_lanes(&fields, lane_hi, start, 4, &mut out).expect("batch");
+        for i in 0..4u64 {
+            let single = hash_pow_lane(&fields, lane_hi, start + i).expect("single");
+            assert_eq!(&out[(i as usize) * 32..(i as usize + 1) * 32], &single[..]);
+        }
     }
 }

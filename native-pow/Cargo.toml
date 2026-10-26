@@ -17,6 +17,20 @@ noid_poseidon2b = { git = "https://github.com/ignotusnemo/parano1d.git", rev = "
 noid_core = { git = "https://github.com/ignotusnemo/parano1d.git", rev = "52938433a30b185ab007afaa15166a632cf2e82e" }
 hex = "0.4"
 
+# Optional real-pool proof binary (CI-only; never built for Android).
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = { version = "0.26", optional = true }
+anyhow = { version = "1", optional = true }
+
+[features]
+default = []
+pool-proof = ["dep:rustls", "dep:webpki-roots", "dep:anyhow"]
+
+[[bin]]
+name = "pool_proof"
+path = "src/bin/pool_proof.rs"
+required-features = ["pool-proof"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"

@@ -6,9 +6,8 @@ import org.secretarrow.noidminer.data.stratum.StratumCodec
 import org.secretarrow.noidminer.data.stratum.difficultyToTarget
 import org.secretarrow.noidminer.pow.JobSource
 import org.secretarrow.noidminer.pow.MiningJob
-import org.secretarrow.noidminer.util.Hex
-import java.security.SecureRandom
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicReference
 
 /** Well-known Parano1d pools (from the upstream miner README). */
 data class PoolPreset(
@@ -19,16 +18,33 @@ data class PoolPreset(
 
 object PoolPresets {
     val ALL = listOf(
-        PoolPreset("Alphapool EU", "stratum+tcp://eu1.alphapool.tech:19610", tls = false),
         PoolPreset("InnovLab EU (TLS)", "stratum+tls://eu.innovlab.cc:19601", tls = true),
         PoolPreset("RPlant EU (TLS)", "stratum+tls://stratum-eu.rplant.xyz:17185", tls = true),
         PoolPreset("RPlant Asia (TLS)", "stratum+tls://stratum-asia.rplant.xyz:17185", tls = true),
+        PoolPreset("Alphapool EU", "stratum+tcp://eu1.alphapool.tech:19610", tls = false),
     )
 }
 
 /**
- * POOL source: wraps [StratumClient], decodes notify events into jobs and
- * submits shares with the standard SV1 argument order.
+ * Builds the stratum authorization user from the bound wallet and worker:
+ * `<o1-address>.<worker>` — the standard `wallet.worker` pool convention.
+ * An explicit pool user typed on the Pools screen always wins.
+ */
+fun buildPoolUser(explicitUser: String, walletAddress: String, workerName: String): String {
+    val explicit = explicitUser.trim()
+    if (explicit.isNotBlank()) return explicit
+    val wallet = walletAddress.trim()
+    if (wallet.isNotBlank()) {
+        val worker = workerName.trim().ifBlank { "noidminer" }
+        return "$wallet.$worker"
+    }
+    return ""
+}
+
+/**
+ * POOL source for the real "parano1d-stratum-v1" protocol (InnovLab, RPlant,
+ * Alphapool): authorize with the payout address, mine object-shaped notify
+ * jobs, submit `[job_id, nonce128, work_domain_id]`.
  */
 class PoolJobSource(
     poolUrl: String,
@@ -37,9 +53,13 @@ class PoolJobSource(
 ) : JobSource {
     private val client = StratumClient(poolUrl)
     private val pending = ConcurrentLinkedQueue<MiningJob>()
+    private val sessionNamespace = AtomicReference("")
+
+    @Volatile
     private var authorized = false
-    private var extraNonce1 = ""
-    private var extraNonce2Size = 4
+
+    @Volatile
+    private var poolPaused: Boolean = false
 
     init {
         client.start { raw -> handleLine(raw) }
@@ -47,18 +67,35 @@ class PoolJobSource(
 
     private fun handleLine(raw: String) {
         when (val event = StratumCodec.decode(raw)) {
+            is StratumCodec.Event.SubscribedV1 -> {
+                sessionNamespace.set(event.sessionNamespace)
+                log(
+                    "info",
+                    "subscribed ${event.protocol} ns=${event.sessionNamespace} " +
+                        "nonceBits=${event.nonceBits}",
+                )
+                // Re-authorize on EVERY subscribe — the flag goes stale
+                // after a reconnect, and re-auth is idempotent for pools.
+                if (user.isNotBlank()) {
+                    authorized = client.authorize(user)
+                    log(if (authorized) "info" else "warn", "authorize=$authorized")
+                } else {
+                    log("warn", "no payout address bound — authorize skipped")
+                }
+            }
             is StratumCodec.Event.Subscribed -> {
-                extraNonce1 = event.extraNonce1
-                extraNonce2Size = event.extraNonce2Size
-                log("info", "subscribed, extraNonce1=$extraNonce1")
-                if (user.isNotBlank() && !authorized) {
+                log("info", "subscribed (SV1 legacy)")
+                if (user.isNotBlank()) {
                     authorized = client.authorize(user)
                     log(if (authorized) "info" else "warn", "authorize=$authorized")
                 }
             }
             is StratumCodec.Event.AuthResult -> {
                 authorized = event.ok
-                log(if (event.ok) "info" else "error", "pool authorize: ${event.ok}")
+                log(
+                    if (event.ok) "info" else "error",
+                    if (event.ok) "pool authorized: $user" else "pool authorize REJECTED",
+                )
             }
             is StratumCodec.Event.Difficulty -> {
                 pending.clear()
@@ -71,10 +108,21 @@ class PoolJobSource(
                     powFieldsHex = event.powFieldsHex,
                     targetLeHex = event.targetLeHex,
                     height = event.height,
-                    expiresAtMs = System.currentTimeMillis() + JOB_TTL_MS,
+                    expiresAtMs = System.currentTimeMillis() +
+                        (event.expiresInSeconds.coerceIn(5, 600) * 1000L),
+                    laneHiHex = event.laneHiHex,
+                    workDomainIdHex = event.workDomainIdHex,
                 )
                 if (event.cleanJobs) pending.clear()
                 pending.add(job)
+            }
+            is StratumCodec.Event.Paused -> {
+                poolPaused = true
+                log("warn", "pool paused mining — ${event.reason}")
+            }
+            is StratumCodec.Event.Resumed -> {
+                poolPaused = false
+                log("info", "pool resumed mining")
             }
             is StratumCodec.Event.UnsupportedJob ->
                 log("warn", "unrecognized ${event.method} params — pool codec may need tuning")
@@ -87,33 +135,28 @@ class PoolJobSource(
     private var lastTarget: String = StratumCodec.MAX_TARGET
 
     override fun nextJob(): MiningJob? {
+        if (poolPaused) return null
         val job = pending.poll() ?: return null
         return job.copy(targetLeHex = job.targetLeHex.takeIf { it != StratumCodec.MAX_TARGET } ?: lastTarget)
     }
 
     override fun submit(job: MiningJob, nonceLeHex: String, hashHex: String): Boolean {
         val user0 = user.ifBlank { "noidminer.worker" }
-        // Standard SV1 share: (user.jobId, extraNonce2, nTime, nonce). Pools
-        // that accept Parano1d-style raw nonces get the full 32-hex nonce in
-        // the nonce slot; nTime is zeroed (POWHDR templates carry time in the
-        // header fields themselves).
-        val nonce2 = extraNonce2(extraNonce2Size)
-        return client.submitShare(user0, job.templateId, nonce2, "00000000", nonceLeHex.takeLast(8))
-    }
-
-    private fun extraNonce2(size: Int): String {
-        val bytes = ByteArray(size.coerceIn(0, 8))
-        SecureRandom().nextBytes(bytes)
-        return Hex.encode(bytes)
+        // parano1d-stratum-v1 submit: [job_id, nonce128hex, work_domain_id].
+        // The nonce is the full 16-byte little-endian lane
+        // (counter_le || session-prefix). Pools without a work_domain_id
+        // (legacy SV1) fall back to the 5-param BTC shape.
+        val domain = job.workDomainIdHex
+        return if (domain != null) {
+            client.submitV1(user0, job.templateId, nonceLeHex, domain)
+        } else {
+            client.submitShare(user0, job.templateId, "", "00000000", nonceLeHex.takeLast(8))
+        }
     }
 
     override fun close() {
         client.stop()
         pending.clear()
-    }
-
-    private companion object {
-        const val JOB_TTL_MS = 90_000L
     }
 }
 

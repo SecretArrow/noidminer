@@ -27,7 +27,7 @@ dengan foreground service, **UI/UX Material 3 yang didesain ulang total**, dan
 | **Background** | Foreground service (`specialUse`) + notifikasi live (hashrate, shares) + aksi Pause/Resume/Stop + partial wake lock |
 | **Cronjobs** | **WorkManager periodic** — `HealthCheckWorker` (15 min, restart service kalau OS kill), `HashrateLoggerWorker` (30 min, snapshot ke log), `GuardReevalWorker` (15 min, resume dari pause kalau kondisi sudah aman) |
 | **Guard** | Thermal (pause di SEVERE, throttle di MODERATE), battery (< X% / hanya saat charging / battery saver), auto-resume |
-| **Mode** | **Pool** (Stratum SV1 TCP/TLS) dan **Solo** (JSON-RPC node Parano1d) — **tanpa mode demo/simulasi**, semua hashrate/share nyata |
+| **Mode** | **Pool** (`parano1d-stratum-v1` TCP/TLS — InnovLab/RPlant/Alphapool) dan **Solo** (JSON-RPC node Parano1d) — **tanpa mode demo/simulasi**, semua hashrate/share nyata |
 | **UI v2** | "Aurora Midnight" theme — glass-morphism cards, radial gauge, animated gradient CTA, live indicator, status pills, sparkline. Material 3 dengan brand identity (bukan dynamic color default) |
 | **Hardware info** | SoC, cluster big/mid/LITTLE, RAM, ABI, GPU vendor/device, benchmark 3 detik |
 | **Keamanan** | Wallet di `EncryptedSharedPreferences`, dikecualikan dari cloud backup; token tidak pernah masuk repo |

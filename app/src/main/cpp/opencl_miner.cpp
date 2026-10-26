@@ -261,7 +261,8 @@ std::string opencl_device_name() {
 }
 
 bool opencl_batch_hash(const std::string& pow_fields_hex,
-                       uint64_t nonce_start,
+                       uint64_t lane_hi,
+                       uint64_t lane_lo_start,
                        uint32_t count,
                        std::vector<uint8_t>& out) {
     if (count == 0 || count > 4096) return false;
@@ -283,7 +284,7 @@ bool opencl_batch_hash(const std::string& pow_fields_hex,
             leaf[i * 2] = flat_fields[i].lo;
             leaf[i * 2 + 1] = flat_fields[i].hi;
         }
-        U128 nonce_tower{nonce_start + n, 0};
+        U128 nonce_tower{lane_lo_start + n, lane_hi};
         U128 nonce_flat = apply_matrix(TOWER_TO_FLAT, nonce_tower);
         leaf[20] = nonce_flat.lo;   // field 10 low word
         leaf[21] = nonce_flat.hi;   // field 10 high word

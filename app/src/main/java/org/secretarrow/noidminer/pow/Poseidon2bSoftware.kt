@@ -106,11 +106,15 @@ class Poseidon2bSoftware {
 
     /**
      * PoW digest: 16 tower-basis fields (256-byte LE template), field 10 =
-     * nonce. All lanes are converted tower→flat, absorbed 2 at a time
-     * through the flat sponge with the POWHDR capacity IV, and the two
-     * output lanes are converted flat→tower. Returns 32 bytes or null.
+     * the 128-bit nonce lane `(laneHi shl 64) or nonceLo`. All lanes are
+     * converted tower→flat, absorbed 2 at a time through the flat sponge
+     * with the POWHDR capacity IV, and the two output lanes are converted
+     * flat→tower. Returns 32 bytes or null.
+     *
+     * Pool stratum uses `(sessionPrefixLe shl 64) or counter`; solo mining
+     * keeps a free lane (`laneHi = 0`).
      */
-    fun powHash(powFieldsHex: String, nonce: Long): ByteArray? {
+    fun powHashLane(powFieldsHex: String, nonceLo: Long, laneHi: Long = 0L): ByteArray? {
         val fields = Hex.decode(powFieldsHex) ?: return null
         if (fields.size != Poseidon2bConstants.POW_FIELD_COUNT * 16) return null
         val state = arrayOf(
@@ -120,8 +124,8 @@ class Poseidon2bSoftware {
             iv[1].copyOf(),
         )
         for (block in 0 until 8) {
-            state[0] = xor(state[0], flatLane(fields, block * 2, nonce))
-            state[1] = xor(state[1], flatLane(fields, block * 2 + 1, nonce))
+            state[0] = xor(state[0], flatLane(fields, block * 2, nonceLo, laneHi))
+            state[1] = xor(state[1], flatLane(fields, block * 2 + 1, nonceLo, laneHi))
             permute(state)
         }
         val out = ByteArray(32)
@@ -130,13 +134,17 @@ class Poseidon2bSoftware {
         return out
     }
 
+    /** Legacy single-nonce entry — free 128-bit lane with a zero high word. */
+    fun powHash(powFieldsHex: String, nonce: Long): ByteArray? =
+        powHashLane(powFieldsHex, nonce, 0L)
+
     /**
      * Reads template lane [index] (tower bytes, LE) and converts it to the
-     * flat basis, substituting the nonce (also tower→flat) at lane 10.
+     * flat basis, substituting the nonce lane (also tower→flat) at lane 10.
      */
-    private fun flatLane(fields: ByteArray, index: Int, nonce: Long): LongArray {
+    private fun flatLane(fields: ByteArray, index: Int, nonceLo: Long, laneHi: Long): LongArray {
         val tower = if (index == Poseidon2bConstants.POW_NONCE_FIELD_INDEX) {
-            longArrayOf(nonce, 0L)
+            longArrayOf(nonceLo, laneHi)
         } else {
             val base = index * 16
             var lo = 0UL

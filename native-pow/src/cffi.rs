@@ -7,7 +7,8 @@
 use std::os::raw::{c_char, c_int, c_int64, c_uint, c_ulonglong};
 
 use crate::{
-    batch_hash, check_target, hash_pow, le256_lt, validate_bech32m_o1, POW_DIGEST_LEN,
+    batch_hash, batch_hash_lanes, check_target, hash_pow, le256_lt, validate_bech32m_o1,
+    POW_DIGEST_LEN,
 };
 
 /// Parse a hex string into bytes; returns None on malformed input.
@@ -56,6 +57,39 @@ pub extern "C" fn noidminer_batch_hash(
         .into_owned();
     let mut buf = vec![0u8; out_len];
     match batch_hash(&fields_hex, nonce_start, nonce_count, &mut buf) {
+        Ok(()) => unsafe {
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), out, out_len);
+            0
+        },
+        Err(_) => -2,
+    }
+}
+
+/// Batch-hash 128-bit lanes: lane i = `(lane_hi shl 64) | (lane_lo_start + i)`.
+/// Pool stratum passes the session prefix as `lane_hi`.
+#[no_mangle]
+pub extern "C" fn noidminer_batch_hash_lanes(
+    pow_fields_hex: *const c_char,
+    lane_hi: c_ulonglong,
+    lane_lo_start: c_ulonglong,
+    nonce_count: c_uint,
+    out: *mut u8,
+    out_len: usize,
+) -> c_int {
+    if pow_fields_hex.is_null() || out.is_null() {
+        return -1;
+    }
+    let fields_hex = unsafe { std::ffi::CStr::from_ptr(pow_fields_hex) }
+        .to_string_lossy()
+        .into_owned();
+    let mut buf = vec![0u8; out_len];
+    match batch_hash_lanes(
+        &fields_hex,
+        lane_hi,
+        lane_lo_start,
+        nonce_count,
+        &mut buf,
+    ) {
         Ok(()) => unsafe {
             std::ptr::copy_nonoverlapping(buf.as_ptr(), out, out_len);
             0

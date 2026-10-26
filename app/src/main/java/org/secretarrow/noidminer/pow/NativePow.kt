@@ -44,9 +44,17 @@ object NativePow {
         }
     }
 
-    external fun hashPowNative(powFieldsHex: String, nonce: Long): ByteArray?
-
-    external fun batchHashNative(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray?
+    /**
+     * Batch-hash 128-bit lanes over the template. Lane i =
+     * `(laneHi shl 64) or (laneLoStart + i)` — pool stratum passes the
+     * session prefix as `laneHi`. Returns `count * 32` bytes or null.
+     */
+    external fun batchHashLaneNative(
+        powFieldsHex: String,
+        laneHi: Long,
+        laneLoStart: Long,
+        count: Int,
+    ): ByteArray?
 
     external fun checkTargetNative(hash: ByteArray, targetLeHex: String): Boolean
 
@@ -60,7 +68,13 @@ object NativePow {
 
     external fun openclDeviceNameNative(): String?
 
-    external fun openclBatchHashNative(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray?
+    /** GPU batch over 128-bit lanes — same lane semantics as [batchHashLaneNative]. */
+    external fun openclBatchHashLaneNative(
+        powFieldsHex: String,
+        laneHi: Long,
+        laneLoStart: Long,
+        count: Int,
+    ): ByteArray?
 
     external fun releaseOpenclNative()
 }

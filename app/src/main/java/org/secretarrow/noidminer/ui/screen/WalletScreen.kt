@@ -18,6 +18,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +41,8 @@ fun WalletScreen(modifier: Modifier = Modifier, viewModel: WalletViewModel = vie
     val valid by viewModel.walletValid.collectAsState()
     var address by remember(settings.walletAddress) { mutableStateOf(settings.walletAddress) }
     val context = LocalContext.current
+
+    LaunchedEffect(Unit) { viewModel.attach(context) }
 
     Column(
         modifier = modifier
@@ -63,7 +67,7 @@ fun WalletScreen(modifier: Modifier = Modifier, viewModel: WalletViewModel = vie
                 )
                 Text(
                     text = when (valid) {
-                        null -> "Format bech32m, HRP o1"
+                        null -> "Format bech32m, HRP o (alamat o1…)"
                         true -> "Valid (bech32m)"
                         false -> "Tidak valid — periksa lagi"
                     },

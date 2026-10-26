@@ -27,6 +27,9 @@ object ServiceLocator {
     @Volatile
     private var hardwareInfo: HardwareInfo? = null
 
+    @Volatile
+    private var vault: Vault? = null
+
     val serviceLog = MutableSharedFlow<LogLine>(extraBufferCapacity = 512)
 
     /** Application context — set in [init], safe after Application.onCreate. */
@@ -46,7 +49,10 @@ object ServiceLocator {
             settingsRepo ?: MinerSettingsRepository(context.applicationContext).also { settingsRepo = it }
         }
 
-    fun vault(context: Context): Vault = Vault(context.applicationContext)
+    fun vault(context: Context): Vault =
+        vault ?: synchronized(lock) {
+            vault ?: Vault(context.applicationContext).also { vault = it }
+        }
 
     fun minerCore(): MinerCore =
         minerCore ?: synchronized(lock) {
@@ -70,6 +76,7 @@ object ServiceLocator {
             settingsRepo = null
             minerCore = null
             hardwareInfo = null
+            vault = null
         }
     }
 }

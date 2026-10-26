@@ -110,6 +110,25 @@ class StratumClient(
         JSONArray().put(user),
     )
 
+    /**
+     * parano1d-stratum-v1 submit: `[job_id, nonce128hex, work_domain_id]`.
+     * Verified live against InnovLab/RPlant — params[0] is the job id (the
+     * connection is already authorized), the nonce is the full 16-byte
+     * little-endian lane, and work_domain_id must echo the notify value.
+     */
+    fun submitV1(
+        user: String,
+        jobId: String,
+        nonce128Hex: String,
+        workDomainIdHex: String,
+    ): Boolean = sendRequest(
+        "mining.submit",
+        JSONArray()
+            .put(jobId)
+            .put(nonce128Hex)
+            .put(workDomainIdHex),
+    )
+
     /** Sends mining.submit with the given share components. */
     fun submitShare(
         user: String,

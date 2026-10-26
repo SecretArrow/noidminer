@@ -99,9 +99,28 @@ class MinerE2eTest {
                 "lines=${server.receivedLines().takeLast(6)}",
             submitted,
         )
+        val submitLine = server.lastSubmit().orEmpty()
         assertTrue(
-            "submit must reference the notified job id — got: ${server.lastSubmit().orEmpty()}",
-            server.lastSubmit().orEmpty().contains("job-e2e-1"),
+            "submit must reference the notified job id — got: $submitLine",
+            submitLine.contains("job-e2e-1"),
+        )
+        // parano1d-stratum-v1 submit: [job_id, nonce128hex(32 chars),
+        // work_domain_id]. The nonce lane must embed the session prefix.
+        val nonceInSubmit = Regex("\"([0-9a-f]{32})\"").find(submitLine)?.groupValues?.get(1)
+        assertTrue(
+            "submit must carry a 32-hex nonce lane — got: $submitLine",
+            nonceInSubmit != null && nonceInSubmit.endsWith("0102030405060708"),
+        )
+        assertTrue(
+            "submit must echo work_domain_id — got: $submitLine",
+            submitLine.contains("ab".repeat(32)),
+        )
+        assertTrue(
+            "authorize must use the configured pool user — got: " +
+                server.receivedLines().firstOrNull { it.contains("mining.authorize") }.orEmpty(),
+            server.receivedLines().any {
+                it.contains("mining.authorize") && it.contains("o1e2e.worker01")
+            },
         )
 
         compose.waitForIdle()
@@ -117,8 +136,10 @@ class MinerE2eTest {
 }
 
 /**
- * Minimal SV1 server standing in for a pool. Difficulty 1 + an all-FF
- * target make every digest a valid share so the slow software engine on the
+ * Minimal "parano1d-stratum-v1" server standing in for a real pool —
+ * object-shaped notify (512-hex pow_fields = 256 bytes), session namespace,
+ * and mining.submit [job_id, nonce128hex, work_domain_id]. An all-FF share
+ * target makes every digest a valid share so the slow software engine on the
  * emulator still exercises the full submission path deterministically.
  */
 private class LocalStratumServer {
@@ -161,7 +182,6 @@ private class LocalStratumServer {
                 when {
                     line.contains("mining.subscribe") -> {
                         writer.println(SUBSCRIBE_RESULT)
-                        writer.println(SET_DIFFICULTY)
                         writer.println(notifyLine())
                     }
                     line.contains("mining.authorize") -> writer.println(AUTH_RESULT)

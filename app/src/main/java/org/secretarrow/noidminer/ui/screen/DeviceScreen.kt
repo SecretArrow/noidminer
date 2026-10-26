@@ -18,6 +18,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+
+import androidx.compose.runtime.LaunchedEffect
+
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -35,6 +39,9 @@ fun DeviceScreen(modifier: Modifier = Modifier, viewModel: DeviceViewModel = vie
     val gpu by viewModel.gpu.collectAsState()
     val battery by viewModel.battery.collectAsState()
     val bench by viewModel.benchmark.collectAsState()
+
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { viewModel.attach(context) }
 
     Column(
         modifier = modifier

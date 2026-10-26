@@ -25,7 +25,6 @@ import org.secretarrow.noidminer.data.MinerSettingsRepository
 import org.secretarrow.noidminer.data.MineMode
 import org.secretarrow.noidminer.data.PoolJobSource
 import org.secretarrow.noidminer.data.SoloJobSource
-import org.secretarrow.noidminer.data.Vault
 import org.secretarrow.noidminer.di.ServiceLocator
 
 /**
@@ -119,13 +118,27 @@ class MinerService : Service() {
     }
 
     private fun buildJobSource(settings: MinerSettings): JobSource {
-        val vault = Vault(this)
+        val vault = ServiceLocator.vault(this)
         val logger = { level: String, message: String ->
             ServiceLocator.emitServiceLog(level, message)
         }
         return when (settings.mode) {
-            MineMode.POOL -> PoolJobSource(settings.poolUrl, vault.poolUser.ifBlank { settings.poolUser }, logger)
-            MineMode.SOLO -> SoloJobSource(settings.soloRpcUrl, vault.soloRpcToken, vault.walletAddress, logger)
+            MineMode.POOL -> {
+                // Priority: explicit pool user (Pools screen) >
+                // <wallet>.<worker> from the bound wallet > blank (logged).
+                val user = org.secretarrow.noidminer.data.buildPoolUser(
+                    explicitUser = vault.poolUser.ifBlank { settings.poolUser },
+                    walletAddress = vault.walletAddress.ifBlank { settings.walletAddress },
+                    workerName = settings.workerName,
+                )
+                PoolJobSource(settings.poolUrl, user, logger)
+            }
+            MineMode.SOLO -> SoloJobSource(
+                settings.soloRpcUrl,
+                vault.soloRpcToken,
+                vault.walletAddress.ifBlank { settings.walletAddress },
+                logger,
+            )
         }
     }
 

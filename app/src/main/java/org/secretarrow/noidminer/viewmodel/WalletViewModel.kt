@@ -11,23 +11,53 @@ import org.secretarrow.noidminer.data.MinerSettings
 import org.secretarrow.noidminer.data.MinerSettingsRepository
 import org.secretarrow.noidminer.di.ServiceLocator
 
-/** Wallet screen state — reuses the settings repository. */
-class WalletViewModel : ViewModel() {
-    private lateinit var repo: MinerSettingsRepository
+/**
+ * Base for settings-backed ViewModels.
+ *
+ * CRASH FIX: the screens used to reach `repo` before any `attach()` call,
+ * throwing UninitializedPropertyAccessException on every Save/Bind tap
+ * ("all features crash"). The repo is now resolved lazily — from an explicit
+ * context, else from the cached application context — so no method can ever
+ * hit an uninitialized property.
+ */
+abstract class SettingsBackedViewModel : ViewModel() {
+    private val repoLock = Any()
+    private var repo: MinerSettingsRepository? = null
+    private var collecting = false
 
-    private val _settings = MutableStateFlow(MinerSettings())
+    protected val _settings = MutableStateFlow(MinerSettings())
     val settings: StateFlow<MinerSettings> = _settings.asStateFlow()
 
-    private val _walletValid = MutableStateFlow<Boolean?>(null)
-    val walletValid: StateFlow<Boolean?> = _walletValid.asStateFlow()
-
+    /** Idempotent attach — safe to call from every composition. */
     fun attach(context: Context) {
-        if (this::repo.isInitialized) return
-        repo = ServiceLocator.settingsRepository(context)
+        val r = ensureRepo(context)
+        synchronized(this) {
+            if (collecting) return
+            collecting = true
+        }
         viewModelScope.launch {
-            repo.settings.collect { _settings.value = it }
+            r.settings.collect { _settings.value = it }
         }
     }
+
+    protected fun ensureRepo(context: Context? = null): MinerSettingsRepository {
+        repo?.let { return it }
+        synchronized(repoLock) {
+            repo?.let { return it }
+            val ctx = (context ?: ServiceLocator.appContext)?.applicationContext
+                ?: error("MinerSettingsRepository requires a context — attach() was never called")
+            return MinerSettingsRepository(ctx).also {
+                repo = it
+                ServiceLocator.init(ctx)
+            }
+        }
+    }
+}
+
+/** Wallet screen state — reuses the settings repository. */
+class WalletViewModel : SettingsBackedViewModel() {
+    private val _walletValid = MutableStateFlow<Boolean?>(null)
+    val walletValid: StateFlow<Boolean?> = _walletValid.asStateFlow()
 
     fun setWallet(context: Context, address: String) {
         val trimmed = address.trim()
@@ -40,8 +70,10 @@ class WalletViewModel : ViewModel() {
         _walletValid.value = valid
         if (valid) {
             viewModelScope.launch {
-                repo.update { it.copy(walletAddress = trimmed) }
-                ServiceLocator.vault(context).walletAddress = trimmed
+                ensureRepo(context).update { it.copy(walletAddress = trimmed) }
+                runCatching {
+                    ServiceLocator.vault(context).walletAddress = trimmed
+                }
             }
         }
     }

@@ -9,11 +9,20 @@ interface HashEngine {
     val name: String
 
     /**
-     * Batch-hash [count] consecutive nonces starting at [nonceStart].
-     * Returns `count * 32` bytes, or null when the backend failed — callers
-     * must treat null as "no solutions" and keep going (or fall back).
+     * Batch-hash [count] consecutive nonces starting at [nonceStart] with a
+     * zero high lane word (free 128-bit lane). Returns `count * 32` bytes,
+     * or null when the backend failed — callers must treat null as "no
+     * solutions" and keep going (or fall back).
      */
-    fun batchHash(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray?
+    fun batchHash(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray? =
+        batchHashLanes(powFieldsHex, 0L, nonceStart, count)
+
+    /**
+     * Batch-hash [count] consecutive 128-bit lanes. Lane i =
+     * `(laneHi << 64) | (laneLoStart + i)` — field 10 of the template is
+     * replaced by that lane before hashing. Returns `count * 32` bytes.
+     */
+    fun batchHashLanes(powFieldsHex: String, laneHi: Long, laneLoStart: Long, count: Int): ByteArray?
 
     /** True when hash < target (256-bit little-endian). */
     fun checkTarget(hash: ByteArray, targetLeHex: String): Boolean
@@ -26,13 +35,17 @@ interface HashEngine {
 class NativeEngine : HashEngine {
     override val name: String = "CPU · native (PMULL)"
 
-    override fun batchHash(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray? =
-        try {
-            NativePow.batchHashNative(powFieldsHex, nonceStart, count)
-        } catch (t: Throwable) {
-            Log.w(TAG, "native batch failed: ${t.message}")
-            null
-        }
+    override fun batchHashLanes(
+        powFieldsHex: String,
+        laneHi: Long,
+        laneLoStart: Long,
+        count: Int,
+    ): ByteArray? = try {
+        NativePow.batchHashLaneNative(powFieldsHex, laneHi, laneLoStart, count)
+    } catch (t: Throwable) {
+        Log.w(TAG, "native batch failed: ${t.message}")
+        null
+    }
 
     override fun checkTarget(hash: ByteArray, targetLeHex: String): Boolean =
         try {
@@ -62,10 +75,16 @@ class NativeEngine : HashEngine {
 class SoftwareEngine : HashEngine {
     override val name: String = "CPU · software"
 
-    override fun batchHash(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray? {
+    override fun batchHashLanes(
+        powFieldsHex: String,
+        laneHi: Long,
+        laneLoStart: Long,
+        count: Int,
+    ): ByteArray? {
         val out = ByteArray(count * 32)
+        val software = Poseidon2bSoftware.INSTANCE
         for (i in 0 until count) {
-            val digest = software.powHash(powFieldsHex, nonceStart + i) ?: return null
+            val digest = software.powHashLane(powFieldsHex, laneLoStart + i, laneHi) ?: return null
             digest.copyInto(out, i * 32)
         }
         return out
@@ -91,13 +110,17 @@ class GpuEngine(
 ) : HashEngine {
     override val name: String = "GPU · OpenCL ($deviceName)"
 
-    override fun batchHash(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray? =
-        try {
-            NativePow.openclBatchHashNative(powFieldsHex, nonceStart, count)
-        } catch (t: Throwable) {
-            Log.w(TAG, "gpu batch failed: ${t.message}")
-            null
-        }
+    override fun batchHashLanes(
+        powFieldsHex: String,
+        laneHi: Long,
+        laneLoStart: Long,
+        count: Int,
+    ): ByteArray? = try {
+        NativePow.openclBatchHashLaneNative(powFieldsHex, laneHi, laneLoStart, count)
+    } catch (t: Throwable) {
+        Log.w(TAG, "gpu batch failed: ${t.message}")
+        null
+    }
 
     override fun checkTarget(hash: ByteArray, targetLeHex: String): Boolean =
         NativeEngine().checkTarget(hash, targetLeHex)
@@ -135,10 +158,10 @@ object EngineSelector {
     @Volatile
     private var gpuDisabled: Boolean = false
 
-    /** Probe template — deterministic pseudo-random 256-hex string. */
+    /** Probe template — deterministic pseudo-random 512-hex string (256 bytes). */
     private val PROBE_FIELDS: String = buildString {
         var x = 0x9E3779B97F4A7C15UL
-        repeat(128) {
+        repeat(256) {
             x = x * 6364136223846793005UL + 1442695040888963407UL
             val v = (x shr 32).toString(16).padStart(8, '0')
             append(v)
@@ -181,9 +204,11 @@ object EngineSelector {
     /** GPU must match the native CPU digest-for-digest on the probe batch. */
     private fun gpuSelfCheck(cpu: HashEngine): Boolean {
         val count = 8
-        val cpuOut = cpu.batchHash(PROBE_FIELDS, 1000L, count) ?: return false
+        val cpuOut = cpu.batchHashLanes(PROBE_FIELDS, 0x0123456789ABCDEFL, 1000L, count)
+            ?: return false
         val gpuOut = try {
-            NativePow.openclBatchHashNative(PROBE_FIELDS, 1000L, count) ?: return false
+            NativePow.openclBatchHashLaneNative(PROBE_FIELDS, 0x0123456789ABCDEFL, 1000L, count)
+                ?: return false
         } catch (t: Throwable) {
             return false
         }

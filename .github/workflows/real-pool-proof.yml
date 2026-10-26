@@ -1,0 +1,73 @@
+name: Real pool proof
+
+# Mines a REAL accepted share on the live InnovLab pool with the payout
+# address, using the actual Rust PoW core (AVX2 on the CI runner). This is
+# the end-to-end production proof for the whole mining stack:
+# subscribe → authorize(o1…) → notify(object) → 128-bit session lane →
+# share_target hit → submit [job_id, nonce128, work_domain_id] → accepted.
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Pool host (default InnovLab EU)"
+        default: "eu.innovlab.cc"
+        required: false
+      port:
+        description: "Pool stratum port"
+        default: "19601"
+        required: false
+      address:
+        description: "Payout o1 address"
+        default: "o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn"
+        required: false
+      max_seconds:
+        description: "Mining budget in seconds"
+        default: "3000"
+        required: false
+
+concurrency:
+  group: pool-proof
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    name: Mine a real share on the live pool
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal 2>/dev/null || true
+          rustup default stable
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            ~/.rustup
+            native-pow/target
+          key: rust-${{ runner.os }}-v3-poolproof-${{ hashFiles('native-pow/Cargo.toml') }}
+          restore-keys: rust-${{ runner.os }}-v3-poolproof-
+      - name: Build pool_proof (release, AVX2)
+        run: cargo build --release --manifest-path native-pow/Cargo.toml --features pool-proof --bin pool_proof
+      - name: Mine a real share with the payout address
+        timeout-minutes: 55
+        run: |
+          ./native-pow/target/release/pool_proof \
+            "${{ github.event.inputs.host || 'eu.innovlab.cc' }}" \
+            "${{ github.event.inputs.port || '19601' }}" \
+            "${{ github.event.inputs.address || 'o1z6nlslj0hu9c0qpnmgr4cfzm3kr2cn7k70svte6ph3uujg3nzmqswhmprn' }}" \
+            "${{ github.event.inputs.max_seconds || '3000' }}" 2>&1 | tee proof.log
+      - name: Upload proof log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pool-proof-log
+          path: proof.log
+          retention-days: 30

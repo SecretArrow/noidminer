@@ -17,6 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +42,8 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
     var poolUser by remember(settings.poolUser) { mutableStateOf(settings.poolUser) }
     var worker by remember(settings.workerName) { mutableStateOf(settings.workerName) }
     var soloRpc by remember(settings.soloRpcUrl) { mutableStateOf(settings.soloRpcUrl) }
+
+    LaunchedEffect(Unit) { viewModel.attach(context) }
 
     Column(
         modifier = modifier
@@ -81,7 +85,7 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
             OutlinedTextField(
                 value = poolUser,
                 onValueChange = { poolUser = it },
-                label = { Text("User (wallet.address)") },
+                label = { Text("User (kosongkan = alamat wallet.worker)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

@@ -11,7 +11,6 @@ import org.secretarrow.noidminer.util.Hex
 
 /** Protocol-layer unit tests: stratum codec, difficulty math, bech32m, hex. */
 class ProtocolTest {
-
     @Test
     fun `stratum codec finds pow_fields and target in notify params`() {
         val fields = "ab".repeat(256)

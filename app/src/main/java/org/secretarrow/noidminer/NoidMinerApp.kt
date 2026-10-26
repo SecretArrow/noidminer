@@ -5,7 +5,6 @@ import org.secretarrow.noidminer.di.ServiceLocator
 import org.secretarrow.noidminer.pow.NativePow
 
 class NoidMinerApp : Application() {
-
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)

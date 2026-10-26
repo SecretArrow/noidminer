@@ -28,12 +28,21 @@ import org.secretarrow.noidminer.ui.screen.SettingsScreen
 import org.secretarrow.noidminer.ui.screen.WalletScreen
 
 /** App destinations — five bottom tabs plus a settings route. */
-sealed class Dest(val route: String, val label: String, val icon: ImageVector) {
+sealed class Dest(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+) {
     data object Mine : Dest("mine", "Mine", Icons.Filled.Bolt)
+
     data object Pools : Dest("pools", "Pools", Icons.Filled.Scanner)
+
     data object Wallet : Dest("wallet", "Wallet", Icons.Filled.Savings)
+
     data object Device : Dest("device", "Device", Icons.Filled.Memory)
+
     data object Log : Dest("log", "Log", Icons.Filled.Terminal)
+
     data object Settings : Dest("settings", "Settings", Icons.Filled.Memory)
 
     companion object {

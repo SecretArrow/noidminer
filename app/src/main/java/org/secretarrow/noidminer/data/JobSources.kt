@@ -11,7 +11,11 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /** Well-known Parano1d pools (from the upstream miner README). */
-data class PoolPreset(val label: String, val url: String, val tls: Boolean)
+data class PoolPreset(
+    val label: String,
+    val url: String,
+    val tls: Boolean,
+)
 
 object PoolPresets {
     val ALL = listOf(
@@ -29,7 +33,6 @@ object PoolPresets {
 class DemoJobSource(
     private val onShare: (MiningJob, String) -> Boolean = { _, _ -> true },
 ) : JobSource {
-
     override fun nextJob(): MiningJob? {
         val rng = SecureRandom()
         val fields = ByteArray(256).also(rng::nextBytes)
@@ -64,7 +67,6 @@ class PoolJobSource(
     private val user: String,
     private val log: (String, String) -> Unit,
 ) : JobSource {
-
     private val client = StratumClient(poolUrl)
     private val pending = ConcurrentLinkedQueue<MiningJob>()
     private var authorized = false
@@ -154,7 +156,6 @@ class SoloJobSource(
     private val minerAddress: String,
     private val log: (String, String) -> Unit,
 ) : JobSource {
-
     private val rpc = SoloRpcClient(rpcUrl, token)
 
     override fun nextJob(): MiningJob? = try {

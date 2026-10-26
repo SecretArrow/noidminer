@@ -14,7 +14,6 @@ import java.util.concurrent.atomic.AtomicReference
  * policy is deterministic and unit-testable via [GuardPolicy].
  */
 object Guards {
-
     data class GuardSnapshot(
         val thermalStatus: Int = PowerManager.THERMAL_STATUS_NONE,
         val batteryPct: Int = 100,
@@ -32,8 +31,14 @@ object Guards {
 
     sealed interface Decision {
         data object KeepMining : Decision
-        data class Pause(val reason: String) : Decision
-        data class Throttle(val reason: String) : Decision
+
+        data class Pause(
+            val reason: String,
+        ) : Decision
+
+        data class Throttle(
+            val reason: String,
+        ) : Decision
     }
 
     /** Pure policy — easy to unit test. */
@@ -94,7 +99,9 @@ object Guards {
 }
 
 /** Small holder so the service can keep the latest snapshot around. */
-class GuardMonitor(private val context: Context) {
+class GuardMonitor(
+    private val context: Context,
+) {
     val latest = AtomicReference(Guards.GuardSnapshot())
 
     fun refresh(): Guards.GuardSnapshot = Guards.snapshot(context).also { latest.set(it) }

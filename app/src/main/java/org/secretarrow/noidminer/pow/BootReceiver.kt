@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
  * enabled programmatically when the user turns auto-start on.
  */
 class BootReceiver : BroadcastReceiver() {
-
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val pending = goAsync()

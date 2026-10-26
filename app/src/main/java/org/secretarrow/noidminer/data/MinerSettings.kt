@@ -39,8 +39,9 @@ data class MinerSettings(
 )
 
 /** Reactive settings repository backed by DataStore. */
-class MinerSettingsRepository(private val context: Context) {
-
+class MinerSettingsRepository(
+    private val context: Context,
+) {
     private object Keys {
         val MODE = stringPreferencesKey("mode")
         val BACKEND = stringPreferencesKey("backend")

@@ -19,8 +19,11 @@ import org.secretarrow.noidminer.util.Format
 
 /** Device screen state: hardware inventory, GPU probe, battery, benchmark. */
 class DeviceViewModel : ViewModel() {
-
-    data class GpuState(val device: String?, val status: String, val selfCheck: String)
+    data class GpuState(
+        val device: String?,
+        val status: String,
+        val selfCheck: String,
+    )
 
     data class BatteryState(
         val pct: Int = 100,
@@ -29,7 +32,10 @@ class DeviceViewModel : ViewModel() {
         val thermal: String = "none",
     )
 
-    data class BenchState(val running: Boolean = false, val result: String? = null)
+    data class BenchState(
+        val running: Boolean = false,
+        val result: String? = null,
+    )
 
     private val _hardware = MutableStateFlow(
         HardwareInfo("…", "…", 0, emptyList(), 0, false),

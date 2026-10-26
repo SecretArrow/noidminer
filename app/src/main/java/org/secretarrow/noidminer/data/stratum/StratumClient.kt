@@ -36,7 +36,9 @@ class StratumClient(
     private val url: String,
     private val userAgent: String = "NoidMiner/1.0",
 ) {
-    data class Line(val raw: String)
+    data class Line(
+        val raw: String,
+    )
 
     private val _lines = MutableSharedFlow<Line>(extraBufferCapacity = 256)
     val lines: SharedFlow<Line> = _lines.asSharedFlow()
@@ -60,7 +62,9 @@ class StratumClient(
     val extraNonce1: AtomicHolder<String?> = AtomicHolder(null)
     val extraNonce2Size: AtomicHolder<Int> = AtomicHolder(4)
 
-    class AtomicHolder<T>(@Volatile var value: T)
+    class AtomicHolder<T>(
+        @Volatile var value: T,
+    )
 
     /** Starts the background connection loop. */
     fun start(onLine: (String) -> Unit) {
@@ -115,7 +119,12 @@ class StratumClient(
         nonce: String,
     ): Boolean = sendRequest(
         "mining.submit",
-        JSONArray().put(user).put(jobId).put(extraNonce2).put(nTime).put(nonce),
+        JSONArray()
+            .put(user)
+            .put(jobId)
+            .put(extraNonce2)
+            .put(nTime)
+            .put(nonce),
     )
 
     private fun sendRequest(method: String, params: JSONArray): Boolean {
@@ -180,7 +189,11 @@ class StratumClient(
         _lines.tryEmit(Line("""{"level":"$level","message":"$message"}"""))
     }
 
-    data class ParsedUrl(val scheme: String, val host: String, val port: Int)
+    data class ParsedUrl(
+        val scheme: String,
+        val host: String,
+        val port: Int,
+    )
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000
@@ -192,7 +205,8 @@ class StratumClient(
             val trimmed = url.trim()
             val schemeMatch = Regex("^([a-zA-Z0-9+]+)://").find(trimmed)
             val scheme = schemeMatch?.groupValues?.get(1) ?: "stratum+tcp"
-            val rest = trimmed.removePrefix("${schemeMatch?.groupValues?.get(1) ?: ""}://")
+            val rest = trimmed
+                .removePrefix("${schemeMatch?.groupValues?.get(1) ?: ""}://")
                 .removePrefix("://")
             val hostPort = rest.substringBefore('/')
             val host = hostPort.substringBefore(':').ifBlank { hostPort }

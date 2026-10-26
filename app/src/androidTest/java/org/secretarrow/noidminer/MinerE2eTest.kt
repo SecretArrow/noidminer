@@ -17,7 +17,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MinerE2eTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 

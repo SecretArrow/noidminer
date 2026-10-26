@@ -15,7 +15,6 @@ import org.secretarrow.noidminer.viewmodel.MineViewModel
  * persistent notification, regardless of UI state.
  */
 class MainActivity : ComponentActivity() {
-
     private val mineViewModel by lazy { MineViewModel() }
 
     override fun onCreate(savedInstanceState: Bundle?) {

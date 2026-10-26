@@ -15,7 +15,6 @@ import org.secretarrow.noidminer.pow.MinerState
 
 /** Drives the Mine screen from the singleton [MinerCore] state. */
 class MineViewModel : ViewModel() {
-
     private val core = ServiceLocator.minerCore()
 
     private val _state = MutableStateFlow(MinerState())
@@ -58,7 +57,8 @@ class MineViewModel : ViewModel() {
 
     fun stopMining(context: Context) {
         context.startService(
-            android.content.Intent(context, org.secretarrow.noidminer.pow.MinerService::class.java)
+            android.content
+                .Intent(context, org.secretarrow.noidminer.pow.MinerService::class.java)
                 .setAction(org.secretarrow.noidminer.pow.MinerService.ACTION_STOP),
         )
     }

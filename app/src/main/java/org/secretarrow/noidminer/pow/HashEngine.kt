@@ -49,7 +49,8 @@ class NativeEngine : HashEngine {
         }
 
     private fun softwareAddressCheck(address: String): Boolean =
-        org.secretarrow.noidminer.util.Bech32m.isValidO1(address)
+        org.secretarrow.noidminer.util.Bech32m
+            .isValidO1(address)
 
     companion object {
         private const val TAG = "NativeEngine"
@@ -75,7 +76,8 @@ class SoftwareEngine : HashEngine {
     }
 
     override fun validateAddress(address: String): Boolean =
-        org.secretarrow.noidminer.util.Bech32m.isValidO1(address)
+        org.secretarrow.noidminer.util.Bech32m
+            .isValidO1(address)
 
     companion object {
         val software = Poseidon2bSoftware.INSTANCE
@@ -83,7 +85,9 @@ class SoftwareEngine : HashEngine {
 }
 
 /** OpenCL GPU engine — only constructed after the self-check passes. */
-class GpuEngine(private val deviceName: String) : HashEngine {
+class GpuEngine(
+    private val deviceName: String,
+) : HashEngine {
     override val name: String = "GPU · OpenCL ($deviceName)"
 
     override fun batchHash(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray? =
@@ -113,7 +117,6 @@ class GpuEngine(private val deviceName: String) : HashEngine {
  * mining. Any mismatch permanently (per process) disables the GPU.
  */
 object EngineSelector {
-
     sealed interface Selection {
         val engine: HashEngine
         val gpuAvailable: Boolean

@@ -48,7 +48,11 @@ data class MinerState(
     val pausedReason: String? = null,
 )
 
-data class LogLine(val ts: Long, val level: String, val message: String)
+data class LogLine(
+    val ts: Long,
+    val level: String,
+    val message: String,
+)
 
 /**
  * Threaded mining core. N worker threads pull batches through the selected

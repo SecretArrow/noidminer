@@ -16,7 +16,11 @@ data class HardwareInfo(
     val ramTotalMb: Long,
     val hasNeonPmull: Boolean,
 ) {
-    data class Cluster(val label: String, val cores: Int, val maxFreqKHz: Long)
+    data class Cluster(
+        val label: String,
+        val cores: Int,
+        val maxFreqKHz: Long,
+    )
 
     /** Suggested worker count: performance cores when detectable, else n-2. */
     fun suggestedThreads(): Int {
@@ -31,7 +35,6 @@ data class HardwareInfo(
 }
 
 object HardwareReader {
-
     fun read(): HardwareInfo {
         val cores = Runtime.getRuntime().availableProcessors()
         return HardwareInfo(
@@ -45,12 +48,16 @@ object HardwareReader {
     }
 
     private fun socName(): String = runCatching {
-        val hw = java.io.BufferedReader(java.io.InputStreamReader(ProcessBuilder("getprop", "ro.hardware").start().inputStream))
-            .readLine()?.trim()
+        val hw = java.io
+            .BufferedReader(java.io.InputStreamReader(ProcessBuilder("getprop", "ro.hardware").start().inputStream))
+            .readLine()
+            ?.trim()
         val model = Build.HARDWARE.ifBlank { hw ?: "" }
         val soc = runCatching {
-            java.io.BufferedReader(java.io.InputStreamReader(ProcessBuilder("getprop", "ro.soc.model").start().inputStream))
-                .readLine()?.trim()
+            java.io
+                .BufferedReader(java.io.InputStreamReader(ProcessBuilder("getprop", "ro.soc.model").start().inputStream))
+                .readLine()
+                ?.trim()
         }.getOrNull()
         listOf(soc.orEmpty(), model).firstOrNull { it.isNotBlank() } ?: "SoC"
     }.getOrDefault("SoC")
@@ -64,7 +71,9 @@ object HardwareReader {
         for (cpu in 0 until cores) {
             val f = runCatching {
                 File("/sys/devices/system/cpu/cpu$cpu/cpufreq/cpuinfo_max_freq")
-                    .readText().trim().toLong()
+                    .readText()
+                    .trim()
+                    .toLong()
             }.getOrNull() ?: continue
             freqs[cpu] = f
         }
@@ -76,15 +85,24 @@ object HardwareReader {
             .entries
             .sortedByDescending { it.key }
             .mapIndexed { index, (_, members) ->
-                val label = if (index == 0) "Prime/Big" else if (index == 1) "Mid" else "LITTLE"
+                val label = if (index == 0) {
+                    "Prime/Big"
+                } else if (index == 1) {
+                    "Mid"
+                } else {
+                    "LITTLE"
+                }
                 HardwareInfo.Cluster(label, members.size, members.first().value)
             }
     }
 
     private fun readRamMb(): Long = runCatching {
         val lines = File("/proc/meminfo").readLines()
-        val totalKb = lines.firstOrNull { it.startsWith("MemTotal") }
-            ?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull() ?: 0L
+        val totalKb = lines
+            .firstOrNull { it.startsWith("MemTotal") }
+            ?.split(Regex("\\s+"))
+            ?.getOrNull(1)
+            ?.toLongOrNull() ?: 0L
         totalKb / 1024
     }.getOrDefault(0L)
 

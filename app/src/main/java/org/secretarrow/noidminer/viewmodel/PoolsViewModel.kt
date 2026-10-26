@@ -18,7 +18,6 @@ import org.secretarrow.noidminer.util.Bech32m
 
 /** Pool configuration + wallet binding. */
 class PoolsViewModel : ViewModel() {
-
     private lateinit var repo: MinerSettingsRepository
 
     private val _settings = MutableStateFlow(MinerSettings())

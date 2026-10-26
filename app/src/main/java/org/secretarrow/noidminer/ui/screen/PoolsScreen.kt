@@ -124,7 +124,8 @@ fun PoolsScreen(modifier: Modifier = Modifier, viewModel: PoolsViewModel = viewM
         if (probe.isNotBlank()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                shape = androidx.compose.foundation.shape
+                    .RoundedCornerShape(16.dp),
             ) {
                 Text(
                     text = probe,
@@ -152,7 +153,8 @@ private fun PoolPresetRow(viewModel: PoolsViewModel) {
             Card(
                 onClick = { viewModel.applyPreset(androidx.compose.ui.platform.LocalContext.current, preset.url) },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                shape = androidx.compose.foundation.shape
+                    .RoundedCornerShape(14.dp),
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Text(preset.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

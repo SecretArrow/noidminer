@@ -14,7 +14,6 @@ import org.junit.Test
  * produces byte-identical digests.
  */
 class Poseidon2bSoftwareTest {
-
     private val engine = Poseidon2bSoftware()
 
     @Test
@@ -23,7 +22,11 @@ class Poseidon2bSoftwareTest {
             for ((nonce, expected) in digests) {
                 val digest = engine.powHash(fieldsHex, nonce)
                 assertNotNull("$name nonce=$nonce", digest)
-                assertEquals("$name nonce=$nonce", expected, org.secretarrow.noidminer.util.Hex.encode(digest!!))
+                assertEquals(
+                    "$name nonce=$nonce", expected,
+                    org.secretarrow.noidminer.util.Hex
+                        .encode(digest!!)
+                )
             }
         }
     }

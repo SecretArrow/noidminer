@@ -10,10 +10,12 @@ import androidx.security.crypto.MasterKey
  * Kept separate from the plain settings so secrets never land in
  * cloud backups (see data_extraction_rules.xml).
  */
-class Vault(context: Context) {
-
+class Vault(
+    context: Context,
+) {
     private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context)
+        val masterKey = MasterKey
+            .Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
         EncryptedSharedPreferences.create(

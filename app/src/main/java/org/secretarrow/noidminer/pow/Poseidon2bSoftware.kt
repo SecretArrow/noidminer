@@ -12,7 +12,6 @@ import org.secretarrow.noidminer.util.Hex
  * all use this engine.
  */
 class Poseidon2bSoftware {
-
     private val rc = Poseidon2bConstants.RC_FLAT
     private val mdsFull = Poseidon2bConstants.MDS_FULL_FLAT
     private val mdsPartial = Poseidon2bConstants.MDS_PARTIAL_FLAT

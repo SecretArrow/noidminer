@@ -13,7 +13,6 @@ import org.secretarrow.noidminer.di.ServiceLocator
 
 /** Wallet screen state — reuses the settings repository. */
 class WalletViewModel : ViewModel() {
-
     private lateinit var repo: MinerSettingsRepository
 
     private val _settings = MutableStateFlow(MinerSettings())
@@ -36,7 +35,8 @@ class WalletViewModel : ViewModel() {
             _walletValid.value = null
             return
         }
-        val valid = org.secretarrow.noidminer.util.Bech32m.isValidO1(trimmed)
+        val valid = org.secretarrow.noidminer.util.Bech32m
+            .isValidO1(trimmed)
         _walletValid.value = valid
         if (valid) {
             viewModelScope.launch {
@@ -46,5 +46,7 @@ class WalletViewModel : ViewModel() {
         }
     }
 
-    fun totalShares(): Long = ServiceLocator.minerCore().state.value.sharesAccepted
+    fun totalShares(): Long = ServiceLocator
+        .minerCore()
+        .state.value.sharesAccepted
 }

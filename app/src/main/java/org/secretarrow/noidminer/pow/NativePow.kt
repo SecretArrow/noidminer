@@ -45,13 +45,22 @@ object NativePow {
     }
 
     external fun hashPowNative(powFieldsHex: String, nonce: Long): ByteArray?
+
     external fun batchHashNative(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray?
+
     external fun checkTargetNative(hash: ByteArray, targetLeHex: String): Boolean
+
     external fun le256LtNative(a: ByteArray, b: ByteArray): Boolean
+
     external fun validateAddressNative(address: String): Boolean
+
     external fun benchNative(powFieldsHex: String, nonceStart: Long, iters: Int): Long
+
     external fun openclAvailableNative(): Boolean
+
     external fun openclDeviceNameNative(): String?
+
     external fun openclBatchHashNative(powFieldsHex: String, nonceStart: Long, count: Int): ByteArray?
+
     external fun releaseOpenclNative()
 }

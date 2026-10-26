@@ -16,7 +16,6 @@ import org.secretarrow.noidminer.pow.MinerCore
  * keeps the CI build fast while remaining trivially testable.
  */
 object ServiceLocator {
-
     private val lock = Any()
     private var appContext: Context? = null
 

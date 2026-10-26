@@ -15,7 +15,6 @@ import org.secretarrow.noidminer.pow.BootReceiver
 
 /** Settings screen state + persistence. */
 class SettingsViewModel : ViewModel() {
-
     private lateinit var repo: MinerSettingsRepository
 
     private val _settings = MutableStateFlow(MinerSettings())

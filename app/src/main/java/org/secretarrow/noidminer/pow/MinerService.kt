@@ -36,7 +36,6 @@ import org.secretarrow.noidminer.di.ServiceLocator
  *  - thermal + battery guards pause mining automatically and resume later
  */
 class MinerService : Service() {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var settingsRepo: MinerSettingsRepository
     private lateinit var core: MinerCore
@@ -104,7 +103,10 @@ class MinerService : Service() {
                 }
                 is Guards.Decision.Throttle -> core.resume()
                 Guards.Decision.KeepMining -> {
-                    if (core.paused.get() && core.state.value.pausedReason?.startsWith("user") != true) {
+                    if (core.paused.get() &&
+                        core.state.value.pausedReason
+                            ?.startsWith("user") != true
+                    ) {
                         core.resume()
                         updateNotification()
                     }
@@ -149,7 +151,8 @@ class MinerService : Service() {
 
     private fun buildNotification(): Notification {
         val state = core.state.value
-        val hashrate = org.secretarrow.noidminer.util.Format.hashrate(state.hashrateHps)
+        val hashrate = org.secretarrow.noidminer.util.Format
+            .hashrate(state.hashrateHps)
         val title = when {
             state.running && state.paused -> getString(R.string.notif_paused)
             state.running -> getString(R.string.notif_title)
@@ -171,7 +174,8 @@ class MinerService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val pausedNow = state.paused
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat
+            .Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_mining)
             .setContentTitle(title)
             .setContentText(text)

@@ -14,7 +14,6 @@ import org.secretarrow.noidminer.util.Bech32m
 /** On-device checks: hardware detection, native availability, codec sanity. */
 @RunWith(AndroidJUnit4::class)
 class DeviceIntegrationTest {
-
     @Test
     fun hardwareReaderReturnsSaneValues() {
         val info = HardwareReader.read()
@@ -25,7 +24,9 @@ class DeviceIntegrationTest {
 
     @Test
     fun nativePowLoadsOnArm64ElseFallsBack() {
-        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+        val abi = android.os.Build.SUPPORTED_ABIS
+            .firstOrNull()
+            .orEmpty()
         val loaded = NativePow.ensureLoaded()
         if (abi.startsWith("arm64")) {
             assertTrue("native core must load on $abi", loaded)

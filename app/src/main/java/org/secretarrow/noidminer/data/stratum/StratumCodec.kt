@@ -15,7 +15,6 @@ import org.secretarrow.noidminer.pow.MiningJob
  *     the UI can surface a "pool protocol not recognized" hint.
  */
 object StratumCodec {
-
     private val HEX_256 = Regex("^[0-9a-fA-F]{256}$")
     private val HEX_64 = Regex("^[0-9a-fA-F]{64}$")
 
@@ -90,9 +89,21 @@ object StratumCodec {
 
     sealed interface Event {
         data object Ignored : Event
-        data class Subscribed(val extraNonce1: String, val extraNonce2Size: Int) : Event
-        data class AuthResult(val id: String, val ok: Boolean) : Event
-        data class Difficulty(val difficulty: Double) : Event
+
+        data class Subscribed(
+            val extraNonce1: String,
+            val extraNonce2Size: Int,
+        ) : Event
+
+        data class AuthResult(
+            val id: String,
+            val ok: Boolean,
+        ) : Event
+
+        data class Difficulty(
+            val difficulty: Double,
+        ) : Event
+
         data class Notify(
             val jobId: String,
             val powFieldsHex: String,
@@ -101,9 +112,19 @@ object StratumCodec {
             val cleanJobs: Boolean,
         ) : Event
 
-        data class UnsupportedJob(val method: String, val raw: String) : Event
-        data class Error(val id: String, val message: String) : Event
-        data class ResultOk(val id: String) : Event
+        data class UnsupportedJob(
+            val method: String,
+            val raw: String,
+        ) : Event
+
+        data class Error(
+            val id: String,
+            val message: String,
+        ) : Event
+
+        data class ResultOk(
+            val id: String,
+        ) : Event
     }
 }
 
@@ -111,9 +132,20 @@ object StratumCodec {
 fun difficultyToTarget(difficulty: Double): String {
     val d = difficulty.coerceAtLeast(1e-9)
     // max_target = 2^256-1; target = max_target / difficulty
-    val max = java.math.BigInteger.ONE.shiftLeft(256).subtract(java.math.BigInteger.ONE)
-    val target = max.divide(java.math.BigDecimal(d).toBigInteger().coerceAtLeast(java.math.BigInteger.ONE))
-    return target.toString(16).lowercase().padStart(64, '0').takeLast(64)
+    val max = java.math.BigInteger.ONE
+        .shiftLeft(256)
+        .subtract(java.math.BigInteger.ONE)
+    val target = max.divide(
+        java.math
+            .BigDecimal(d)
+            .toBigInteger()
+            .coerceAtLeast(java.math.BigInteger.ONE)
+    )
+    return target
+        .toString(16)
+        .lowercase()
+        .padStart(64, '0')
+        .takeLast(64)
 }
 
 /** Convenience used by the pool job source. */

@@ -14,8 +14,10 @@ import java.net.URL
  * `paranoid_submitBlock(template_id, nonce_le_hex)` — identical to the
  * upstream reference miner.
  */
-class SoloRpcClient(private val rpcUrl: String, private val token: String = "") {
-
+class SoloRpcClient(
+    private val rpcUrl: String,
+    private val token: String = "",
+) {
     data class Template(
         val templateId: String,
         val powFieldsHex: String,
@@ -94,5 +96,8 @@ class SoloRpcClient(private val rpcUrl: String, private val token: String = "") 
         }
     }
 
-    class RpcException(message: String, val stale: Boolean = false) : Exception(message)
+    class RpcException(
+        message: String,
+        val stale: Boolean = false,
+    ) : Exception(message)
 }

@@ -35,6 +35,7 @@ class PoolJobSourceTest {
         val authorizedUser = AtomicReference<String?>(null)
         val lastSubmit = AtomicReference<String?>(null)
         val submitLatch = CountDownLatch(1)
+
         @Volatile private var stopped = false
 
         val port: Int get() = server.localPort
@@ -67,7 +68,9 @@ class PoolJobSourceTest {
                                     line.contains("mining.authorize") -> {
                                         authorizedUser.set(
                                             Regex("\"mining.authorize\",\"params\":\\[\"([^\"]+)\"")
-                                                .find(line)?.groupValues?.get(1),
+                                                .find(line)
+                                                ?.groupValues
+                                                ?.get(1),
                                         )
                                         writer.println("""{"id":2,"result":true,"error":null}""")
                                     }
@@ -83,9 +86,15 @@ class PoolJobSourceTest {
                         } finally {
                             runCatching { socket.close() }
                         }
-                    }.apply { isDaemon = true; start() }
+                    }.apply {
+                        isDaemon = true
+                        start()
+                    }
                 }
-            }.apply { isDaemon = true; start() }
+            }.apply {
+                isDaemon = true
+                start()
+            }
         }
 
         override fun close() {

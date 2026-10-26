@@ -257,9 +257,11 @@ object StratumCodec {
             targetLeHex = target,
             height = objString(body, "height")?.toLongOrNull() ?: 0L,
             cleanJobs = clean,
-            laneHiHex = objString(body, "nonce_prefix_hex")?.lowercase()
+            laneHiHex = objString(body, "nonce_prefix_hex")
+                ?.lowercase()
                 ?.takeIf { it.length == 16 },
-            workDomainIdHex = objString(body, "work_domain_id")?.lowercase()
+            workDomainIdHex = objString(body, "work_domain_id")
+                ?.lowercase()
                 ?.takeIf { HEX_64.matches(it) },
             expiresInSeconds = objString(body, "expires_in_seconds")?.toLongOrNull() ?: 60L,
         )

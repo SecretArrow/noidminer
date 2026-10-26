@@ -53,7 +53,7 @@ class ProtocolTest {
         assertTrue(t1.all { it in '0'..'9' || it in 'a'..'f' })
         // Higher difficulty must yield a smaller (harder) target.
         val t10 = difficultyToTarget(10.0)
-        assertTrue(Hex.decode(t10)!! < Hex.decode(t1)!! || compareLe(Hex.decode(t10)!!, Hex.decode(t1)!!) < 0)
+        assertTrue(compareLe(Hex.decode(t10)!!, Hex.decode(t1)!!) < 0)
     }
 
     private fun compareLe(a: ByteArray, b: ByteArray): Int {

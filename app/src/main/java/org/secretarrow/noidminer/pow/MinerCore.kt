@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import org.secretarrow.noidminer.util.Hex
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicBoolean
@@ -177,14 +178,14 @@ class MinerCore(
 
     fun pause(reason: String?) {
         if (!paused.getAndSet(true)) {
-            _state.value = _state.value.copy(paused = true, pausedReason = reason)
+            _state.update { it.copy(paused = true, pausedReason = reason) }
             log("warn", "paused${reason?.let { " — $it" } ?: ""}")
         }
     }
 
     fun resume() {
         if (paused.getAndSet(false)) {
-            _state.value = _state.value.copy(paused = false, pausedReason = null)
+            _state.update { it.copy(paused = false, pausedReason = null) }
             log("info", "resumed")
         }
     }
@@ -199,7 +200,7 @@ class MinerCore(
         jobSource?.close()
         jobSource = null
         currentJob = null
-        _state.value = _state.value.copy(running = false, paused = false, hashrateHps = 0.0)
+        _state.update { it.copy(running = false, paused = false, hashrateHps = 0.0) }
         log("info", "stopped — ${accepted.get()} accepted, ${rejected.get()} rejected")
     }
 
@@ -207,10 +208,10 @@ class MinerCore(
     fun recordShare(ok: Boolean) {
         if (ok) {
             accepted.incrementAndGet()
-            _state.value = _state.value.copy(sharesAccepted = accepted.get())
+            _state.update { it.copy(sharesAccepted = accepted.get()) }
         } else {
             rejected.incrementAndGet()
-            _state.value = _state.value.copy(sharesRejected = rejected.get())
+            _state.update { it.copy(sharesRejected = rejected.get()) }
         }
     }
 
@@ -234,7 +235,7 @@ class MinerCore(
                 if (currentJob == null) {
                     currentJob = activeJob
                     log("info", "job h=${activeJob.height} id=${activeJob.templateId.take(12)}")
-                    _state.value = _state.value.copy(currentHeight = activeJob.height)
+                    _state.update { it.copy(currentHeight = activeJob.height) }
                 }
                 if (activeJob.isExpired()) {
                     currentJob = null
@@ -291,10 +292,12 @@ class MinerCore(
         val startedAt = _state.value.startedAtMs
         if (startedAt <= 0) return
         val elapsedSec = ((System.currentTimeMillis() - startedAt) / 1000).coerceAtLeast(1)
-        _state.value = _state.value.copy(
-            hashrateHps = hashes.get().toDouble() / elapsedSec,
-            hashesTried = hashes.get(),
-        )
+        _state.update {
+            it.copy(
+                hashrateHps = hashes.get().toDouble() / elapsedSec,
+                hashesTried = hashes.get(),
+            )
+        }
     }
 
     private fun log(level: String, message: String) {

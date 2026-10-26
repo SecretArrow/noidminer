@@ -20,10 +20,46 @@ object StratumCodec {
     private val HEX_64 = Regex("^[0-9a-fA-F]{64}$")
 
     private val METHOD_RE = Regex("\"method\"\\s*:\\s*\"([^\"]+)\"")
-    private val PARAMS_RE = Regex("\"params\"\\s*:\\s*\\[(.*?)](?=\\s*[,}])", RegexOption.DOT_MATCHES_ALL)
     private val RESULT_BOOL_RE = Regex("\"result\"\\s*:\\s*(true|false)")
-    private val RESULT_ARRAY_RE = Regex("\"result\"\\s*:\\s*\\[(.*?)](?=\\s*[,}])", RegexOption.DOT_MATCHES_ALL)
-    private val ERROR_ARRAY_RE = Regex("\"error\"\\s*:\\s*\\[(.+?)](?=\\s*[,}])", RegexOption.DOT_MATCHES_ALL)
+
+    /**
+     * Extracts the body of `"key": [ ... ]` with bracket-depth awareness
+     * (string-safe), so nested arrays like the subscribe result parse
+     * correctly. Returns the content between the outer brackets.
+     */
+    internal fun extractArray(line: String, key: String): String? {
+        val token = "\"$key\""
+        var idx = line.indexOf(token)
+        while (idx != -1) {
+            val rest = line.substring(idx + token.length)
+            val colon = Regex("^\\s*:\\s*").find(rest)
+            if (colon != null) {
+                val after = rest.substring(colon.value.length)
+                if (after.startsWith("[")) {
+                    var depth = 0
+                    var inString = false
+                    var escape = false
+                    for (i in after.indices) {
+                        val ch = after[i]
+                        when {
+                            escape -> escape = false
+                            ch == '\\' && inString -> escape = true
+                            ch == '"' -> inString = !inString
+                            inString -> Unit
+                            ch == '[' -> depth++
+                            ch == ']' -> {
+                                depth--
+                                if (depth == 0) return after.substring(1, i)
+                            }
+                        }
+                    }
+                    return null
+                }
+            }
+            idx = line.indexOf(token, idx + 1)
+        }
+        return null
+    }
 
     /** Splits a flat JSON array body into raw items (strings/numbers/bools). */
     internal fun splitArrayItems(body: String): List<String> {
@@ -63,11 +99,11 @@ object StratumCodec {
     fun decode(line: String): Event {
         val method = METHOD_RE.find(line)?.groupValues?.get(1)
         if (method != null) {
-            val paramsBody = PARAMS_RE.find(line)?.groupValues?.get(1)
+            val paramsBody = extractArray(line, "params")
             val params = paramsBody?.let { splitArrayItems(it) } ?: emptyList()
             return methodEvent(method, params)
         }
-        val error = ERROR_ARRAY_RE.find(line)?.groupValues?.get(1)
+        val error = extractArray(line, "error")
         if (error != null && error.isNotBlank() && error != "null") {
             return Event.Error(error.take(200))
         }
@@ -75,7 +111,7 @@ object StratumCodec {
         if (resultBool != null) {
             return Event.AuthResult(resultBool.groupValues[1] == "true")
         }
-        val resultArray = RESULT_ARRAY_RE.find(line)?.groupValues?.get(1)
+        val resultArray = extractArray(line, "result")
         if (resultArray != null) {
             val items = splitArrayItems(resultArray)
             if (items.size >= 3) {

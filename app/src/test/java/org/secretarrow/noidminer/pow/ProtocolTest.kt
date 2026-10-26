@@ -14,8 +14,8 @@ import org.secretarrow.noidminer.util.Hex
 class ProtocolTest {
     @Test
     fun `stratum codec finds pow_fields and target in notify params`() {
-        val fields = "ab".repeat(256)
-        val target = "cd".repeat(32)
+        val fields = "ab".repeat(128) // 256 hex chars
+        val target = "cd".repeat(32) // 64 hex chars
         val line = """{"id":null,"method":"mining.notify","params":["job1","$fields","$target",true]}"""
         val event = StratumCodec.decode(line)
         assertTrue(event is StratumCodec.Event.Notify)

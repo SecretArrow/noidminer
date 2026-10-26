@@ -15,6 +15,8 @@
 *.keystore
 # Never commit local secrets or keystores.
 keystore/
-ktlint/
+ktlint
+detekt-cli.jar
+detekt.txt
 detekt-cli.jar
 detekt.txt

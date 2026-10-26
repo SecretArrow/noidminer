@@ -378,15 +378,25 @@ fn run_session(
         }
 
         // Drain worker-found shares and submit over the same connection.
-        while let Ok((job_id, nonce_hex, domain)) = submit_rx.try_recv() {
+        // (loop/match, not `while let` — a `while` loop cannot `break` with
+        // a value, which is how the first v2 build failed with E0571.)
+        let mut submit_disconnected: Option<SessionOutcome> = None;
+        loop {
+            let Ok((job_id, nonce_hex, domain)) = submit_rx.try_recv() else {
+                break;
+            };
             let id = next_id.fetch_add(1, Ordering::SeqCst);
             eprintln!("submitting share nonce={nonce_hex}");
             if let Err(e) = tls.send_line(&format!(
                 "{{\"id\":{id},\"method\":\"mining.submit\",\"params\":[\"{job_id}\",\"{nonce_hex}\",\"{domain}\"]}}"
             )) {
                 eprintln!("submit send failed: {e:#}");
-                break SessionOutcome::Disconnected(format!("submit send: {e:#}"));
+                submit_disconnected = Some(SessionOutcome::Disconnected(format!("submit send: {e:#}")));
+                break;
             }
+        }
+        if let Some(outcome) = submit_disconnected {
+            break outcome;
         }
 
         if last_report.elapsed() > Duration::from_secs(30) {

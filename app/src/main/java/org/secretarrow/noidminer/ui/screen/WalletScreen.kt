@@ -2,6 +2,7 @@ package org.secretarrow.noidminer.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -112,7 +113,7 @@ fun WalletScreen(modifier: Modifier = Modifier, viewModel: WalletViewModel = vie
 
 @Composable
 private fun SummaryRow(label: String, value: String) {
-    androidx.compose.foundation.layout.Row(
+    Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

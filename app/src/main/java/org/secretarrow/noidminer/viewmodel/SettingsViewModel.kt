@@ -2,7 +2,9 @@ package org.secretarrow.noidminer.viewmodel
 
 import android.content.Context
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.secretarrow.noidminer.data.BackendPref
 import org.secretarrow.noidminer.di.ServiceLocator
 import org.secretarrow.noidminer.pow.BootReceiver
@@ -46,6 +48,12 @@ class SettingsViewModel : SettingsBackedViewModel() {
 
     fun setAutoBoot(context: Context, value: Boolean) = viewModelScope.launch {
         runCatching { ensureRepo(context).update { it.copy(autoStartOnBoot = value) } }
-        runCatching { BootReceiver.setEnabled(context, value) }
+        // ANR FIX (anr-audit-and-fix skill): setComponentEnabledSetting is a
+        // blocking IPC call to PackageManager that can take 100-500ms. Running
+        // it on the Main dispatcher (viewModelScope default) risks ANR when
+        // the user toggles auto-start. Offload to Dispatchers.IO.
+        withContext(Dispatchers.IO) {
+            runCatching { BootReceiver.setEnabled(context, value) }
+        }
     }
 }

@@ -112,13 +112,15 @@ fun GradientButton(
             .height(height)
             .fillMaxWidth()
             .clip(RoundedCornerShape(26.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = gradient,
-                    start = Offset(shift * -800f, 0f),
-                    end = Offset(shift * 800f + 800f, 800f),
-                ),
-            ).clickable(onClick = onClick),
+            .drawBehind {
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = gradient,
+                        start = Offset(shift * -size.width, 0f),
+                        end = Offset(shift * size.width + size.width, size.height),
+                    ),
+                )
+            }.clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Row(

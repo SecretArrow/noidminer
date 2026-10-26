@@ -1,9 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- SECURITY (android-permissions-security skill): exclude ALL wallet-bearing
+         files from cloud backup and device transfer. The Vault uses
+         EncryptedSharedPreferences (noid_vault.xml) but falls back to a PLAIN
+         private prefs file (noid_vault_fallback.xml) when the AndroidKeyStore
+         is corrupted. The fallback file contains the wallet address in clear
+         text — it MUST be excluded or a backup/restore leaks the payout
+         address to anyone with access to the user's Google account. -->
     <cloud-backup>
         <exclude domain="sharedpref" path="noid_vault.xml" />
+        <exclude domain="sharedpref" path="noid_vault_fallback.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="noid_vault.xml" />
+        <exclude domain="sharedpref" path="noid_vault_fallback.xml" />
     </device-transfer>
 </data-extraction-rules>

@@ -76,6 +76,14 @@ fun MineScreen(
 
     val isRunning = state.running
     val isPaused = state.paused
+    // PERF (jetpack-compose-performance skill): extract repeated State reads
+    // into local vars. `state.hashrateHps` was read 4 times (gaugeMax,
+    // RadialGauge, sparkline, Format.hashrate) — each read is a snapshot
+    // access that registers observation. A single local read is cheaper
+    // and guarantees all four consumers see the same value within this
+    // composition pass.
+    val hashrateHps = state.hashrateHps
+    val isActive = isRunning && !isPaused
 
     // CTA configuration — flips between three states with distinct gradients.
     val (ctaLabel, ctaIcon, ctaAction, ctaGradient) = when {
@@ -85,7 +93,7 @@ fun MineScreen(
     }
 
     // Gauge max — adaptive so the arc shows movement but never saturates.
-    val gaugeMax = (state.hashrateHps * 2.0).coerceAtLeast(50.0).toFloat()
+    val gaugeMax = (hashrateHps * 2.0).coerceAtLeast(50.0).toFloat()
 
     Column(
         modifier = modifier
@@ -102,7 +110,7 @@ fun MineScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LiveIndicator(active = isRunning && !isPaused, label = if (isRunning) "LIVE" else "IDLE")
+            LiveIndicator(active = isActive, label = if (isRunning) "LIVE" else "IDLE")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill(
                     label = state.backend.ifBlank { "—" },
@@ -139,7 +147,7 @@ fun MineScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 RadialGauge(
-                    value = state.hashrateHps.toFloat(),
+                    value = hashrateHps.toFloat(),
                     maxValue = gaugeMax,
                     size = 220.dp,
                     strokeWidth = 14.dp,
@@ -154,7 +162,7 @@ fun MineScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = Format.hashrate(state.hashrateHps),
+                        text = Format.hashrate(hashrateHps),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -183,7 +191,7 @@ fun MineScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
             ) {
                 HashrateChart(
-                    value = state.hashrateHps,
+                    value = hashrateHps,
                     modifier = Modifier.fillMaxSize().padding(6.dp),
                 )
             }
@@ -217,7 +225,7 @@ fun MineScreen(
             icon = ctaIcon,
             onClick = ctaAction,
             gradient = ctaGradient,
-            contentColor = if (isRunning && !isPaused) MaterialTheme.colorScheme.onSurface else Color.White,
+            contentColor = if (isActive) MaterialTheme.colorScheme.onSurface else Color.White,
         )
 
         // ---------------------------------------------------- stop button

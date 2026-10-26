@@ -9,10 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -27,6 +28,12 @@ import kotlin.math.max
  * Live hashrate sparkline — samples [value] into a rolling window and draws
  * a smooth gradient area chart. Pure Canvas (no chart dependency), so it
  * stays tiny and fast.
+ *
+ * PERF (jetpack-compose-performance skill): the previous implementation used
+ * `LaunchedEffect(value)` which cancels and restarts a coroutine on every
+ * value change (~500ms). The new implementation uses a single
+ * `LaunchedEffect(Unit)` that collects changes via `snapshotFlow` — no
+ * per-change coroutine allocation, no cancellation overhead.
  */
 @Composable
 fun HashrateChart(
@@ -37,17 +44,26 @@ fun HashrateChart(
     samples: Int = 60,
 ) {
     val history = remember { mutableStateListOf(0.0) }
-    var smooth by remember { mutableStateOf(0.0) }
+    val smooth = remember { mutableDoubleStateOf(0.0) }
     val animated by animateFloatAsState(
-        targetValue = smooth.toFloat(),
+        targetValue = smooth.floatValue,
         animationSpec = tween(450, easing = LinearEasing),
         label = "hashrate",
     )
-    LaunchedEffect(value) {
-        // Exponential smoothing keeps the hero number readable.
-        smooth = if (smooth == 0.0) value else smooth * 0.7 + value * 0.3
-        history.add(value)
-        while (history.size > samples) history.removeAt(0)
+    // Single LaunchedEffect that survives the lifetime of the composable —
+    // snapshotFlow re-collects when `value` changes, without cancelling the
+    // coroutine. This avoids per-value coroutine teardown/allocation.
+    LaunchedEffect(Unit) {
+        snapshotFlow { value }
+            .collect { v ->
+                smooth.doubleValue = if (smooth.doubleValue == 0.0) {
+                    v
+                } else {
+                    smooth.doubleValue * 0.7 + v * 0.3
+                }
+                history.add(v)
+                while (history.size > samples) history.removeAt(0)
+            }
     }
     Box(modifier) {
         Canvas(modifier = Modifier.fillMaxSize()) {

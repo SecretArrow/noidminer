@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +48,10 @@ fun WalletScreen(modifier: Modifier = Modifier, viewModel: WalletViewModel = vie
     Column(
         modifier = modifier
             .fillMaxSize()
+            // EDGE-TO-EDGE (edge-to-edge skill): imePadding BEFORE
+            // verticalScroll so the keyboard pushes the scrollable content
+            // up — the wallet address text field stays visible while typing.
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),

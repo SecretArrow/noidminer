@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +30,11 @@ class MineViewModel : ViewModel() {
         viewModelScope.launch {
             core.state.collect { _state.value = it }
         }
-        viewModelScope.launch {
+        // ANR FIX (anr-audit-and-fix skill): thermal polling reads
+        // PowerManager.currentThermalStatus every 2s. While cheap, running
+        // it on the Main dispatcher adds avoidable main-thread work. Move
+        // to Dispatchers.Default so the main thread stays free for UI.
+        viewModelScope.launch(Dispatchers.Default) {
             while (true) {
                 appContext?.let { ctx ->
                     val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -49,9 +50,15 @@ fun RadialGauge(
     )
 
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
-    val arcBrush = Brush.sweepGradient(
-        listOf(AuroraMint, AuroraCyan, AuroraViolet, AuroraRose, AuroraMint),
-    )
+    // PERF (jetpack-compose-performance skill): cache the Brush allocation.
+    // The previous code allocated a new sweepGradient brush on every
+    // recomposition. `remember` keeps the same brush instance across
+    // recompositions — only the arc sweep angle changes (read in Draw phase).
+    val arcBrush = remember {
+        Brush.sweepGradient(
+            listOf(AuroraMint, AuroraCyan, AuroraViolet, AuroraRose, AuroraMint),
+        )
+    }
 
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.size(size)) {

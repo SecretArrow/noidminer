@@ -27,7 +27,7 @@ import org.secretarrow.noidminer.di.ServiceLocator
  * the e2e instrumented test, not here.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = android.app.Application::class)
 class HealthCheckWorkerTest {
     private lateinit var context: Context
 

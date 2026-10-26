@@ -1,8 +1,8 @@
 package org.secretarrow.noidminer.work
 
 import android.content.Context
+import android.util.Log
 import androidx.work.WorkManager
-import org.secretarrow.noidminer.di.ServiceLocator
 
 /**
  * Pusat scheduler untuk semua cronjob NoidMiner. Dipanggil sekali dari
@@ -13,18 +13,32 @@ import org.secretarrow.noidminer.di.ServiceLocator
  * berulang. Tidak ada konflik dengan BootReceiver; BootReceiver hanya
  * start mining kalau user sebelumnya set autoStartOnBoot, cronjob ini
  * independen dan selalu jalan.
+ *
+ * Defensive: bungkus tiap schedule dalam runCatching supaya crash di cronjob
+ * tidak pernah membawa turun Application.onCreate (kasus ekstrem: WorkManager
+ * belum siap saat onCreate, mis. di unit test Robolectric).
  */
 object CronScheduler {
-    /** Schedule semua cronjob NoidMiner — idempoten. */
+    /** Schedule semua cronjob NoidMiner — idempoten, tidak pernah throw. */
     fun scheduleAll(context: Context) {
-        ServiceLocator.emitServiceLog("info", "Scheduling cronjobs (health/hashlog/guard)")
-        HealthCheckWorker.schedule(context)
-        HashrateLoggerWorker.schedule(context)
-        GuardReevalWorker.schedule(context)
+        runCatching { HealthCheckWorker.schedule(context) }
+            .onFailure { t ->
+                Log.w("CronScheduler", "HealthCheckWorker schedule failed: ${t.message}")
+            }
+        runCatching { HashrateLoggerWorker.schedule(context) }
+            .onFailure { t ->
+                Log.w("CronScheduler", "HashrateLoggerWorker schedule failed: ${t.message}")
+            }
+        runCatching { GuardReevalWorker.schedule(context) }
+            .onFailure { t ->
+                Log.w("CronScheduler", "GuardReevalWorker schedule failed: ${t.message}")
+            }
     }
 
     /** Cancel semua cronjob — dipakai saat user uninstall atau disable mining. */
     fun cancelAll(context: Context) {
-        WorkManager.getInstance(context).cancelAllWorkByTag("noid_cron")
+        runCatching {
+            WorkManager.getInstance(context).cancelAllWorkByTag("noid_cron")
+        }
     }
 }

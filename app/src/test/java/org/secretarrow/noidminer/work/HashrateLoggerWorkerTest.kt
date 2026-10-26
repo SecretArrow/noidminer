@@ -22,7 +22,7 @@ import org.secretarrow.noidminer.di.ServiceLocator
  * When running, it emits exactly one info-level log line. We verify both paths.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [33], application = android.app.Application::class)
 class HashrateLoggerWorkerTest {
     private lateinit var context: Context
 
